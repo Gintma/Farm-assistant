@@ -30,16 +30,19 @@
     if(e.type==='pointerdown'||e.type==='keydown'){manualUntil=Date.now()+2000;wait('手动操作优先，稍后继续')}
     if(['keyup','pointerup','pointercancel'].includes(e.type))manualUntil=Date.now()+2000;
   }
-  function blur(){manualKeys.clear();manualPointer=false;wait('页面不在前台，暂停自动战斗')}
-  function visibility(){if(document.hidden)blur()}
+  // The game resets Phaser keys on blur. Release our ownership too so the
+  // next visible tick can press them again, without pausing automation.
+  function blur(){manualKeys.clear();manualPointer=false;release()}
+  function hide(){blur();wait('页面已隐藏，暂停自动战斗')}
+  function visibility(){if(document.hidden)hide()}
   window.addEventListener('keydown',manual,true);window.addEventListener('keyup',manual,true);
-  window.addEventListener('pointerdown',manual,true);window.addEventListener('pointerup',manual,true);window.addEventListener('pointercancel',manual,true);window.addEventListener('blur',blur);window.addEventListener('pagehide',blur);
+  window.addEventListener('pointerdown',manual,true);window.addEventListener('pointerup',manual,true);window.addEventListener('pointercancel',manual,true);window.addEventListener('blur',blur);window.addEventListener('pagehide',hide);
   document.addEventListener('visibilitychange',visibility);
   function blocked(){
     if(window.__farmManualCapture)return '手动测试记录中，自动战斗已暂停';
     if(window.__farmVersionGuard?.isBlocked())return '游戏版本保护：自动战斗已暂停';
     if(document.activeElement?.matches?.('input,textarea,select,[contenteditable="true"]'))return '正在编辑设置，暂停战斗输入';
-    if(document.hidden||!document.hasFocus())return '页面不在前台，暂停自动战斗';
+    if(document.hidden)return '页面已隐藏，暂停自动战斗';
     if(Date.now()<manualUntil||manualKeys.size||manualPointer)return '手动操作优先，稍后继续';
     if(window.__farmVerification?.isBlocked?.()||[...document.querySelectorAll('#modal,[role="dialog"],.cf-turnstile,iframe[src*="challenges.cloudflare.com"]')].some(visible))return '弹窗或验证打开，暂停自动战斗';
     const root=document.getElementById('battle-ui');
@@ -101,7 +104,7 @@
   const timer=setInterval(observe,60);
   window.__farmCombat={set,status:()=>({...options,...state,goldGoal:window.__farmCombatGoal?.status?.(),manualPaused:Date.now()<manualUntil||manualKeys.size>0||manualPointer,choices:window.__farmCombatPerks?.status?.().choices??state.choices,perkMessage:window.__farmCombatPerks?.status?.().message,selecting:options.enabled&&window.__farmCombatPerks?.status?.().waiting}),remove:()=>{
     set('enabled',false);clearInterval(timer);mortarTracks.clear();window.__farmCombatPerks?.remove();
-    window.removeEventListener('keydown',manual,true);window.removeEventListener('keyup',manual,true);window.removeEventListener('pointerdown',manual,true);window.removeEventListener('pointerup',manual,true);window.removeEventListener('pointercancel',manual,true);window.removeEventListener('blur',blur);window.removeEventListener('pagehide',blur);document.removeEventListener('visibilitychange',visibility);
+    window.removeEventListener('keydown',manual,true);window.removeEventListener('keyup',manual,true);window.removeEventListener('pointerdown',manual,true);window.removeEventListener('pointerup',manual,true);window.removeEventListener('pointercancel',manual,true);window.removeEventListener('blur',blur);window.removeEventListener('pagehide',hide);document.removeEventListener('visibilitychange',visibility);
     window.__farmBattleInput?.remove();delete window.__farmCombat;
   }};
 })();

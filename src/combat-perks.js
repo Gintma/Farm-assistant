@@ -19,7 +19,7 @@
   }
   function tick(){
     const overlay=[...document.querySelectorAll('#modal,[role="dialog"],.cf-turnstile,iframe[src*="challenges.cloudflare.com"]')].some(visible);
-    if(window.__farmManualCapture||window.__farmVersionGuard?.isBlocked()||!window.__farmCombat?.status?.().enabled||!window.__farmCombat?.status?.().perks||window.__farmCombat?.status?.().manualPaused||document.hidden||!document.hasFocus()||overlay||window.__farmVerification?.isBlocked?.()){reset();message='自动选卡暂停';return}
+    if(window.__farmManualCapture||window.__farmVersionGuard?.isBlocked()||!window.__farmCombat?.status?.().enabled||!window.__farmCombat?.status?.().perks||window.__farmCombat?.status?.().manualPaused||document.hidden||overlay||window.__farmVerification?.isBlocked?.()){reset();message='自动选卡暂停';return}
     const root=document.getElementById('battle-ui'),screen=root?.querySelector('.bui-screen');
     const cards=visible(root)&&visible(screen)?[...root.querySelectorAll('button.perk[data-perk]')].filter(b=>visible(b)&&!b.disabled):[];
     if(!cards.length){reset();message='等待升级卡片';return}

@@ -23,7 +23,7 @@
   }
   function blocked(){
     if(window.__farmManualCapture||window.__farmVersionGuard?.isBlocked()||window.__farmVerification?.isBlocked?.())return true;
-    if(document.hidden||!document.hasFocus())return true;
+    if(document.hidden)return true;
     if(document.activeElement?.matches?.('input,textarea,select,[contenteditable="true"]'))return true;
     if(window.__farmCombat?.status?.().manualPaused)return true;
     return [...document.querySelectorAll('#modal,[role="dialog"],.cf-turnstile,iframe[src*="challenges.cloudflare.com"]')].some(visible);

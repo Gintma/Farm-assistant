@@ -32,6 +32,15 @@ class DistributionTests(unittest.TestCase):
                 self.assertEqual(archive.read(name), (ROOT / 'extension' / Path(name).name).read_bytes())
 
 
+@unittest.skipUnless(shutil.which('node'), 'Node.js is required for combat regression checks')
+class CombatTests(unittest.TestCase):
+    def test_combat_regressions(self):
+        for name in ('test-page-combat.cjs', 'test-combat-perks.cjs', 'test-combat-goal.cjs'):
+            with self.subTest(suite=name):
+                result = run('node', str(ROOT / 'tests' / name), cwd=ROOT)
+                self.assertEqual(result.returncode, 0, result.stdout)
+
+
 class UpdaterTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='farm updater ')
