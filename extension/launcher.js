@@ -1,9 +1,9 @@
-/* Farming Season helper 1.20.3: original combat mechanics and unified controls. */
+/* Farming Season helper 1.20.4: original combat mechanics and unified controls. */
 (() => {
   if(location.hostname!=='farmingseason.io')throw Error('请只在 Farming Season 游戏页启动');
   const temp1=window.__farmGame||window.temp1;
   if(!temp1?.scene?.scenes)throw Error('未找到游戏实例，请使用扩展启动');
-  if(window.__farmLauncher?.status?.().version==='1.20.3')return '助手已开启，保留当前所有开关';
+  if(window.__farmLauncher?.status?.().version==='1.20.4')return '助手已开启，保留当前所有开关';
   const handoff={farm:window.__farmAutoFarm?.status?.(),automation:window.__farmAutomation?.status?.(),layout:window.__farmLayout?.status?.()};
   if(handoff.farm?.pending)throw Error('旧版农活尚未完成，请等队列完成后再次开启新版助手');
   window.__farmLauncher?.remove();
@@ -14,7 +14,7 @@
   function cleanup(){
     window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();
   }
-  window.__farmLauncher={status:()=>({installed:true,version:'1.20.3',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
+  window.__farmLauncher={status:()=>({installed:true,version:'1.20.4',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{
 /* Pure planning over read-only snapshots. Inputs are regular direction/Space/E keys. */
 (() => {
@@ -816,7 +816,7 @@
   window.__farmWorkshop={recipes,stock,week,orderDay,orderReset,orderCap,budgetLeft,syncBoard,readBudget,invalidateBudget,forecast,queued,feedWheat,demands,plan,pendingDone};
 })();
 
-/* All farm jobs share one queue. Writes use visible controls and the game's normal action handler. */
+/* One confirmed helper task at a time; observe actual game workers before dispatch. */
 (() => {
   if(window.__farmAutomation)return '农务队列已安装';
   const R=window.__farmRules,W=window.__farmWorkshop;if(!R||!W)throw Error('缺少农务规则');
@@ -831,7 +831,7 @@
   let route=null,activeMark=null,needsReview=false,message='选择需要的自动功能',controller=null;
   let pending=null,host=null,sections={},controls={},notes={},requestCount=0,viewOnly=false;
   let board=null,orderBudget=null,budgetAt=-Infinity,workshopFault=null,workshopRetry=0;
-  let lastPlan={jobs:[],hint:{}};
+  let lastPlan={jobs:[],hint:{}},lastWorkers=null;
   const activity=window.__farmActivity;
   const prefix='farm-helper.farm-v2.';
   const visible=e=>!!e&&e.isConnected&&!e.hidden&&!!e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden';
@@ -889,11 +889,52 @@
     if(active?.closest?.('input,textarea,select,[contenteditable="true"]')&&!Object.values(sections).some(s=>s.contains(active)))return '等待输入完成';
     return null;
   }
-  function workerState(){
+  function workerState(d){
     const game=window.__farmGame||window.temp1;
     const scene=game?.scene?.scenes.find(s=>s.worker&&s.sys?.isActive?.());
-    if(!scene||typeof scene.worker.pending!=='function')return null;
-    const jobs=scene.worker.pending();return Array.isArray(jobs)?jobs:null;
+    const group=scene?.worker;
+    if(!group||typeof group.pending!=='function')return null;
+    try{
+      const jobs=group.pending();if(!Array.isArray(jobs))return null;
+      if(Array.isArray(group.workers)){
+        // Read the same active worker count and per-worker predicates used by
+        // the game. Construction can suspend a worker with ordinary jobs queued.
+        const count=Number(d.farm.farmers??1),max=[1,2,3,4,6][d.farm.level-1];
+        if(!Number.isInteger(count)||count<1||!max)return null;
+        const total=window.__FS_FARMERS__===false?1:Math.min(count,max);
+        if(group.workers.length<total)return null;
+        let idle=0,building=0;const collected=[];
+        for(const worker of group.workers.slice(0,total)){
+          if(!worker||typeof worker.pending!=='function'||typeof worker.shouldBuild!=='function'||typeof worker.isBusy!=='boolean'||typeof worker.isBuilding!=='boolean'||typeof worker.isFishing!=='boolean')return null;
+          const queue=worker.pending(),willBuild=worker.shouldBuild();
+          if(!Array.isArray(queue)||typeof willBuild!=='boolean')return null;
+          collected.push(...queue);
+          const constructing=worker.isBuilding||willBuild;
+          if(constructing)building++;
+          else if(!worker.isBusy&&!worker.isFishing&&!queue.length)idle++;
+        }
+        if(collected.length!==jobs.length)return null;
+        return {jobs,total,idle,building,busy:total-idle-building,detailed:true};
+      }
+      // Legacy single-worker shape: retain the conservative queue guard.
+      if(Number(d.farm.farmers??1)!==1)return null;
+      const total=1;
+      const building=Math.min(1,d.farm.structures.concat(d.farm.fields).filter(s=>s.buildStart<=d.now&&s.buildUntil>d.now).length);
+      return {jobs,total,idle:jobs.length?0:Math.max(0,total-building),building,busy:jobs.length?1:0,detailed:false};
+    }catch{return null}
+  }
+  function queueConflict(job,jobs){
+    if(!jobs.length)return false;
+    const known=['harvest','plant','feed','collect','tree-harvest','tree-plant','orchard-all','mine','fuel','fish','reel','fish-all'];
+    if(jobs.some(j=>!j||!known.includes(j.type)))return true;
+    const types=new Set(jobs.map(j=>j.type));
+    // Batch buttons act on whole resource groups. Do not adopt another worker's
+    // queued targets into our completion marker, or change their retained items.
+    if(types.has('harvest')||types.has('plant'))return true;
+    if(['feed','collect','fish','reel','fish-all'].some(t=>types.has(t))&&['feed','collect','craft-eggs','craft-milk','craft-wool','craft-keep','craft-start','craft-order','craft-eat','fish-bait','fish-run','fish-reel','energy'].includes(job.kind))return true;
+    if(['orchard-all','tree-harvest','tree-plant'].some(t=>types.has(t))&&['orchard','craft-keep','craft-start','craft-order','energy'].includes(job.kind))return true;
+    if(job.kind==='mine'&&types.has('mine')||job.kind==='oil'&&types.has('fuel'))return true;
+    return false;
   }
   function reserveFeed(d){
     if(!flags.feed)return config.reserve;
@@ -1097,6 +1138,7 @@
       R.quote(d);snapshot=d;snapshotAt=performance.now();loadOwner(d);dayLedger(d);
       if(!Object.values(flags).some(Boolean)&&!pending){releaseIfIdle();message='选择需要的自动功能';return}
       if(!storageOK||!await acquireLease())return;
+      const workers=workerState(d);lastWorkers=workers?{total:workers.total,idle:workers.idle,building:workers.building,busy:workers.busy,queued:workers.jobs.length,detailed:workers.detailed}:null;
       if(pending){
         if(R.pendingDone(pending,d)||W.pendingDone(pending,d)){
           activity?.add('done','游戏已确认：'+activity.describe(pending));
@@ -1109,9 +1151,13 @@
         }
       }
       if(needsReview){message='等待手动检查农活队列';return}
-      const queued=workerState();if(queued===null){message='无法确认农夫队列，请等待游戏加载';return}if(queued.length){if(flags.fishing&&f.fishing){const progress=R.fishingPlan(d).note;if(notes.fishing)notes.fishing.textContent=progress;message=f.fishing.line?'正在钓鱼 · '+progress:'农夫还有 '+queued.length+' 项任务，等待完成'}else message='农夫还有 '+queued.length+' 项任务，等待完成';return}
-      const workers=Math.max(1,Number(f.farmers)||1),building=f.structures.concat(f.fields).filter(s=>s.buildStart<=d.now&&s.buildUntil>d.now).length;
-      if(building>=workers){message='所有农夫都在施工，暂不排新农活';return}
+      if(!workers){message='无法确认每位农夫状态，请等待游戏加载';return}
+      if(!workers.idle){
+        if(workers.building>=workers.total)message='所有农夫都在施工，等待空闲农夫';
+        else if(flags.fishing&&f.fishing)message='农夫忙碌 · '+R.fishingPlan(d).note;
+        else message='农夫忙碌 · '+workers.jobs.length+' 项农务等待完成';
+        return;
+      }
       if(board&&(board.owner!==f.owner||board.day!==W.orderDay(d)))board=null;
       const urgentFeed=flags.feed&&R.feedPlan(d).hungry.length>0;
       if(flags.workshop&&!urgentFeed&&d.now>=workshopRetry){try{
@@ -1129,6 +1175,7 @@
       const {jobs,hint}=candidates(d);lastPlan={jobs,hint};for(const [k,v]of Object.entries(hint))if(notes[k])notes[k].textContent=v;
       let waiting=null;
       for(const job of jobs){
+        if(queueConflict(job,workers.jobs)){waiting='其他农夫已有相关任务排队，等待完成，避免重复提交';continue}
         const q=R.quote(d),protectedEnergy=['feed','collect','income'].includes(job.kind)?0:reserveFeed(d);
         if(f.today.energy<job.energy){
           const packs=Math.ceil((job.energy-f.today.energy)/10),fullCost=Math.ceil(q.energy10*1.15)*packs;
@@ -1214,6 +1261,7 @@
       }catch{}}
       if(flags.workshop&&board){try{const plan=W.plan(snapshot,config,board);rows.push(...plan.lines);if(plan.prep)rows.push({label:'次日备货',text:plan.prep.error||plan.prep.day+' · '+plan.prep.summary+(plan.prep.covered?' · 已备齐或在队列中':plan.prep.late?' · 部分晚于刷新完成':' · 按缺口准备')})}catch{}}
     }
+    if(lastWorkers)rows.push({label:'农夫',text:lastWorkers.total+' 人 · 施工 '+lastWorkers.building+' · 农务忙碌 '+lastWorkers.busy+' · 空闲 '+lastWorkers.idle+' · 排队 '+lastWorkers.queued+' 项'});
     const names={fields:'田地',feed:'喂养',collect:'收集',orchard:'果园',income:'村庄',mine:'矿车',oil:'石油',workshop:'作坊',fishing:'钓鱼'};
     for(const [key,text]of Object.entries(lastPlan.hint))if(flags[key])rows.push({label:names[key]||key,text});
     const next=lastPlan.jobs.find(j=>!pending||j.kind!==pending.kind);
@@ -1235,11 +1283,12 @@
       if(cropTimes.length){title='等待作物成熟';const minutes=Math.max(1,Math.ceil(Math.min(...cropTimes)/60000));nextText='下批作物约 '+(minutes>=60?Math.floor(minutes/60)+' 小时 '+minutes%60+' 分钟':minutes+' 分钟')+'后可收';reason='当前没有可立即执行的农务'}
 if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/羊毛/.test(reason)?'等待羊毛':/牛奶/.test(reason)?'等待牛奶':/鸡蛋/.test(reason)?'等待鸡蛋':/小麦/.test(reason)?'等待小麦':/加工/.test(reason)?'作坊加工中':title}
     }
+    if(status==='waiting'&&lastWorkers&&lastWorkers.idle===0){title='等待空闲农夫';reason=message;nextText='有农夫空闲后重新安排农活；不清空或搬动已有队列'}
     return {status,title,reason,items,next:nextText,rows,enabled:enabled.length,age:snapshot?Math.max(0,Math.floor((now-lastRead)/1000)):null};
   }
   function mount(parent){if(parent){parent.append(field);host?.remove();host=null}else if(!field.isConnected){host=el('aside');host.id='farm-auto-standalone';host.style.cssText='position:fixed;right:12px;top:168px;width:252px;z-index:2147483647;padding:12px;background:#16271d;color:#e6eee6;font:12px/1.5 system-ui';host.append(field,state);document.body.append(host)}}
   const timer=setInterval(()=>void tick(),5000);
-  window.__farmAutomation={pauseForVersion:()=>{epoch++;controller?.abort();activeMark=null;route=null;message='游戏版本保护：全部自动功能已暂停';render()},readSnapshot:()=>({data:snapshot,ageMs:performance.now()-snapshotAt,budget:orderBudget,budgetAgeMs:snapshot?Math.max(0,snapshot.now-budgetAt)+performance.now()-snapshotAt:Infinity}),set,configure,sections,state,recheck,mount,execution,refresh:()=>tick(true),status:()=>({flags:{...flags},config:{...config},message,pending:pending?{...pending}:null,needsReview,requests:requestCount,owner,storageOK}),preview:d=>candidates(d),
+  window.__farmAutomation={pauseForVersion:()=>{epoch++;controller?.abort();activeMark=null;route=null;message='游戏版本保护：全部自动功能已暂停';render()},readSnapshot:()=>({data:snapshot,ageMs:performance.now()-snapshotAt,budget:orderBudget,budgetAgeMs:snapshot?Math.max(0,snapshot.now-budgetAt)+performance.now()-snapshotAt:Infinity}),set,configure,sections,state,recheck,mount,execution,refresh:()=>tick(true),status:()=>({flags:{...flags},config:{...config},message,pending:pending?{...pending}:null,needsReview,requests:requestCount,owner,storageOK,workers:lastWorkers?{...lastWorkers}:null}),preview:d=>candidates(d),
     remove:()=>{removed=true;epoch++;clearInterval(timer);controller?.abort();leaseRelease?.();document.removeEventListener('pointerdown',onManual,true);window.removeEventListener('keydown',onKey,true);document.querySelectorAll('.fh-workshop-action').forEach(b=>b.remove());Object.values(sections).forEach(s=>s.remove());state.remove();recheck.remove();host?.remove();delete window.__farmAutomation;delete window.__farmAutoFarm;delete window.__farmRules;delete window.__farmWorkshop}};
   window.__farmAutoFarm={set:v=>set('fields',v),configure:(id,reserve=config.reserve)=>{if(!R.crops[id]||!Number.isInteger(Number(reserve))||Number(reserve)<0||Number(reserve)>100)return false;assignOption('crop',id);assignOption('reserve',Number(reserve));saveConfig();syncControls();return true},mount,status:()=>({enabled:flags.fields,crop:config.crop,reserve:config.reserve,message,pending:pending?.kind??null,requests:requestCount}),remove:()=>window.__farmAutomation?.remove()};
   mount(document.getElementById('farm-compact-controls'));syncControls();render();void tick(true);
@@ -1973,5 +2022,5 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 1.20.3 已开启；请先完成面板内的游戏版本检查';
+  return '助手 1.20.4 已开启；请先完成面板内的游戏版本检查';
 })();

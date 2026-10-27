@@ -45,7 +45,8 @@ class CombatTests(unittest.TestCase):
 class EconomyTests(unittest.TestCase):
     def test_economic_regressions(self):
         for name in ('test-farm-rules.cjs', 'test-farm-automation.cjs', 'test-workshop.cjs',
-                     'test-fishing.cjs', 'test-earnings-progress.cjs', 'test-reward-mult.cjs'):
+                     'test-fishing.cjs', 'test-earnings-progress.cjs', 'test-reward-mult.cjs',
+                     'test-multi-worker.cjs'):
             with self.subTest(suite=name):
                 result = run('node', str(ROOT / 'tests' / name), cwd=ROOT)
                 self.assertEqual(result.returncode, 0, result.stdout)
