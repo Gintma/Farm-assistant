@@ -1,9 +1,9 @@
-/* Farming Season helper 1.20.6: original combat mechanics and unified controls. */
+/* Farming Season helper 1.20.7: original combat mechanics and unified controls. */
 (() => {
   if(location.hostname!=='farmingseason.io')throw Error('请只在 Farming Season 游戏页启动');
   const temp1=window.__farmGame||window.temp1;
   if(!temp1?.scene?.scenes)throw Error('未找到游戏实例，请使用扩展启动');
-  if(window.__farmLauncher?.status?.().version==='1.20.6')return '助手已开启，保留当前所有开关';
+  if(window.__farmLauncher?.status?.().version==='1.20.7')return '助手已开启，保留当前所有开关';
   const handoff={farm:window.__farmAutoFarm?.status?.(),automation:window.__farmAutomation?.status?.(),layout:window.__farmLayout?.status?.()};
   if(handoff.farm?.pending)throw Error('旧版农活尚未完成，请等队列完成后再次开启新版助手');
   window.__farmLauncher?.remove();
@@ -14,7 +14,7 @@
   function cleanup(){
     window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();
   }
-  window.__farmLauncher={status:()=>({installed:true,version:'1.20.6',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
+  window.__farmLauncher={status:()=>({installed:true,version:'1.20.7',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{
 /* Pure planning over read-only snapshots. Inputs are regular direction/Space/E keys. */
 (() => {
@@ -1049,6 +1049,8 @@
     if(!visible(gameButton('dock','fields','#dock')))return '等待回到自己的农场';
     const battle=document.getElementById('battle-ui'),modal=document.getElementById('modal');
     if(visible(battle)||visible(modal))return '战斗或弹窗中，等待继续';
+    const game=window.__farmGame||window.temp1,scene=game?.scene?.scenes.find(s=>s.worker&&s.sys?.isActive?.());
+    if(scene?.mode?.type&&scene.mode.type!=='normal')return '正在移动或放置建筑，请先点游戏“完成”，农务随后继续';
     if(performance.now()<manualUntil)return '手动操作优先，稍后继续';
     const active=document.activeElement;
     if(active?.closest?.('input,textarea,select,[contenteditable="true"]')&&!Object.values(sections).some(s=>s.contains(active)))return '等待输入完成';
@@ -1566,7 +1568,9 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     }
     const oilText=!oil?'未建油井':!R.built(oil,now)?'建设中 · '+duration(oil.buildUntil-now):oil.collectDay===cal.day?'今日已抽取 · '+duration(cal.nextMidnight-now)+'后重置':'今日可抽取';
     const goods=f.goods,inventory=goods?['gold','silver','oil'].map((k,i)=>['金','银','油'][i]+' '+(Number.isFinite(goods[k])?goods[k].toLocaleString('zh-CN',{maximumFractionDigits:2}):'—')).join(' · '):'资源库存：等待数据';
-    return {harvest,battle,rewardMult:q.rewardMult,rewardMultKnown:q.rewardMultKnown,carry:f.harvestCarry||0,carryCap:q.base*7,feedSpent:f.today.feedSpent||0,nftCapBonus:q.nftCapBonus,nftYieldBonus:q.nftYieldBonus,reset:cal.nextMidnight,sameDay,
+    const credit=f.fullRate??0,paid=f.today.fullRateBonus??0;
+    const fullRate={visible:window.__FS_FULLRATE__===true||f.fullRate!==undefined||f.today.fullRateBonus!==undefined,enabled:window.__FS_FULLRATE__===true,creditUsd:Number.isFinite(credit)&&credit>=0?credit:null,todayBonus:sameDay&&Number.isFinite(paid)&&paid>=0?paid:null};
+    return {fullRate,reinvestDiscount:window.__FS_REINVEST__===true?.2:0,recoveryMode:window.__FS_RECOVERY__===true&&q.rewardMultKnown&&q.rewardMult<.5,harvest,battle,rewardMult:q.rewardMult,rewardMultKnown:q.rewardMultKnown,carry:f.harvestCarry||0,carryCap:q.base*7,feedSpent:f.today.feedSpent||0,nftCapBonus:q.nftCapBonus,nftYieldBonus:q.nftYieldBonus,reset:cal.nextMidnight,sameDay,
       village:{stored:villageStored,cap:villageCap,hourly:villageDaily/24,fullIn:Number.isFinite(villageStored)&&villageDaily>0?(villageCap-villageStored)/villageDaily*dayMs:null},
       mining,oilText,inventory,orders,budget,orderReset:W.orderReset({...d,now}),
       day:today.day};
@@ -1575,6 +1579,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
   const root=el('section');root.id='farm-earnings-controls';root.setAttribute('aria-label','收益进度');
   const stamp=el('p','打开此页后读取收益数据');stamp.className='fh-earnings-stamp';root.append(stamp);
   const payoutLine=el('p','奖励发放比例：等待服务器数据');payoutLine.className='fh-earnings-note';root.append(payoutLine);
+  const creditLine=el('p');creditLine.className='fh-earnings-note';creditLine.hidden=true;root.append(creditLine);
   const today=el('section'),todayHead=el('div'),todayTitle=el('h3','今日额度'),overall=el('span'),todayBody=el('div'),resetLine=el('p');
   today.className='fh-earnings-group';todayHead.className='fh-earnings-heading';overall.className='fh-earnings-overall';resetLine.className='fh-earnings-note fh-earnings-reset';todayHead.append(todayTitle,overall);today.append(todayHead,todayBody,resetLine);root.append(today);
   function disclosure(label){const box=el('details'),summary=el('summary',label),body=el('div');box.className='fh-earnings-details';box.append(summary,body);return {box,body}}
@@ -1601,6 +1606,8 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     const live=Number.isFinite(goal?.cap)&&Number.isFinite(goal?.dailyBeforeRun)&&Number.isFinite(goal?.earned)?{cap:goal.cap,earned:goal.dailyBeforeRun+goal.earned}:null;
     let view=null;try{if(data)view=model(data,now,budget&&new Date(now-Math.max(0,performance.now()-budgetAt)).toISOString().slice(0,10)===new Date(now).toISOString().slice(0,10)?budget:null,live)}catch{}
     payoutLine.textContent=!view?'奖励发放比例：等待服务器数据':view.rewardMultKnown?'当前奖励发放比例 '+(view.rewardMult*100).toLocaleString('zh-CN',{maximumFractionDigits:2})+'% · 已计入收益与基础额度':'发放比例未返回 · 暂按100%估算，暂停自动购买能量';
+    creditLine.hidden=!view?.fullRate.visible;
+    if(view?.fullRate.visible){const credit=view.fullRate;creditLine.textContent='补足额度 '+(credit.creditUsd===null?'等待读取':'$'+credit.creditUsd.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}))+' · 今日已补 '+(credit.todayBonus===null?'等待更新':number(credit.todayBonus)+' 金币')+(!credit.enabled?' · 当前未启用':view.rewardMultKnown&&view.rewardMult>=1?' · 当前100%，暂不消耗额度':'');}
     const ageText=Number.isFinite(age)?age<60000?'刚刚更新':Math.floor(age/60000)+'分钟前更新':'等待数据';
     const status=window.__farmVerification?.isBlocked()?'等待人工验证，暂停读取':document.hidden?'页面在后台，暂停读取':error?'读取失败，保留上次数据':view&&!view.sameDay?'跨日了，等待重新读取':age>=60000&&data?'数据已过期':'额度自动更新';
     stamp.textContent=status==='额度自动更新'?ageText:status+' · '+ageText;
@@ -1617,6 +1624,9 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
       if(view.nftCapBonus>1)textLine(quota.body,'NFT质押收获额度','+'+Math.round((view.nftCapBonus-1)*100)+'%');
       if(view.nftYieldBonus>1)textLine(quota.body,'NFT质押产出加成','+'+Math.round((view.nftYieldBonus-1)*100)+'%');
       if(view.feedSpent>0)textLine(quota.body,'饲料增加额度','+'+number(view.feedSpent));
+      if(view.fullRate.visible)textLine(quota.body,'奖励补足','单独显示到账补足，不重复计入基础额度');
+      if(view.reinvestDiscount)textLine(quota.body,'适用建设及升级折扣',Math.round(view.reinvestDiscount*100)+'%');
+      if(view.recoveryMode)textLine(quota.body,'消费恢复模式','发放比例低于50%，普通消费暂停销毁');
     }
     const shared=el('p','收获额度由作物、果园、动物及钓鱼共用。奖励发放比例不降低购买价格；计价或比例变化会调整当前上限，已得超过上限不表示仍可继续领取。');shared.className='fh-earnings-note';quota.body.append(shared);
     const v=view?.village;
@@ -2261,5 +2271,5 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 1.20.6 已开启；请先完成面板内的游戏版本检查';
+  return '助手 1.20.7 已开启；请先完成面板内的游戏版本检查';
 })();

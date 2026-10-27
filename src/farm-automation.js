@@ -70,6 +70,8 @@
     if(!visible(gameButton('dock','fields','#dock')))return '等待回到自己的农场';
     const battle=document.getElementById('battle-ui'),modal=document.getElementById('modal');
     if(visible(battle)||visible(modal))return '战斗或弹窗中，等待继续';
+    const game=window.__farmGame||window.temp1,scene=game?.scene?.scenes.find(s=>s.worker&&s.sys?.isActive?.());
+    if(scene?.mode?.type&&scene.mode.type!=='normal')return '正在移动或放置建筑，请先点游戏“完成”，农务随后继续';
     if(performance.now()<manualUntil)return '手动操作优先，稍后继续';
     const active=document.activeElement;
     if(active?.closest?.('input,textarea,select,[contenteditable="true"]')&&!Object.values(sections).some(s=>s.contains(active)))return '等待输入完成';

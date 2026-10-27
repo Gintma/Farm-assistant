@@ -52,6 +52,7 @@ b=fixture();const midnight={marketSpent:0};M.initialize(b.d,midnight);p=b.plan([
 b=fixture();b.d.farm.tokens=NaN;assert.throws(()=>b.plan([b.quote('bread',1)]));b.d.farm.tokens=100000;b.board.orders[0].reward=Infinity;assert.equal(b.plan([b.quote('bread',1)]).job,null);
 b=fixture();b.board.orders[0].reward=100;p=b.plan([b.quote('bread',24)]);assert.equal(p.job,null);assert.equal(p.evaluations[0].cost,96);assert.equal(p.evaluations[0].net,4);
 b=fixture();assert.equal(W.orderValue(b.d,b.board.orders[0]),882);W.syncBoard(b.board,b.d,999999);b.d.price.mult=.5;W.syncBoard(b.board,b.d,999999);assert.equal(b.board.orders[0].availableReward,444,'a stale UI price is clamped to the new multiplier with the actual per-item rounding');
+b=fixture();b.board.orders[0].reward=100;ctx.window.__FS_FULLRATE__=true;ctx.window.__FS_REINVEST__=true;b.d.farm.fullRate=1000;b.d.farm.today.fullRateBonus=5000;assert.equal(b.plan([b.quote('bread',24)]).job,null,'new top-up credit and building discounts do not justify an unprofitable market order');delete ctx.window.__FS_FULLRATE__;delete ctx.window.__FS_REINVEST__;
 async function marketBoot(store=new Map()){
  const b=await boot(store),baseQuery=b.doc.querySelectorAll.bind(b.doc),baseFetch=b.context.fetch;
  b.d.farm.animals=[];b.d.farm.structures=b.d.farm.structures.filter(s=>s.kind!=='coop');b.d.farm.pantry={bread:0};b.d.farm.silo.feed=0;b.d.farm.orders={day:'2026-10-23',done:[1,2],dayTokens:0};b.d.farm.structures.push({id:'mill',kind:'mill'},{id:'bakery',kind:'bakery'});

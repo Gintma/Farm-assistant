@@ -51,5 +51,12 @@ function boot(cached=false){
  assert.equal(payout.api.model(payout.d).nftCapBonus,1,'no-NFT UI keeps base cap');
  payout.d.price.mult=1;await payout.step(5000);assert.ok(nodes(payoutHost).some(n=>n.textContent.includes('当前奖励发放比例 100%')));
  delete payout.d.price.mult;await payout.step(5000);assert.ok(nodes(payoutHost).some(n=>n.textContent.includes('发放比例未返回')));payout.api.remove();
+ const boost=boot(true),boostHost=boost.node('div');boost.window.__FS_FULLRATE__=true;boost.window.__FS_REINVEST__=true;boost.window.__FS_RECOVERY__=true;boost.d.price.mult=.25;boost.d.farm.fullRate=12.34;boost.d.farm.today.fullRateBonus=9876;
+ let baseline=boost.api.model(boost.d);const baseCaps=[baseline.harvest.cap,baseline.battle.cap,baseline.orders.cap];
+ boost.api.mount(boostHost);boost.api.setVisible(true);await boost.flush();let boostTree=nodes(boostHost);assert.ok(boostTree.some(n=>n.textContent.includes('补足额度 $12.34 · 今日已补 9,876 金币')));assert.equal(baseline.fullRate.creditUsd,12.34);assert.equal(baseline.reinvestDiscount,.2);assert.equal(baseline.recoveryMode,true);
+ boost.d.farm.fullRate=500;boost.d.farm.today.fullRateBonus=100000;let after=boost.api.model(boost.d);assert.deepEqual([after.harvest.cap,after.battle.cap,after.orders.cap],baseCaps,'top-ups never inflate the base quotas');assert.equal(after.harvest.earned,15000);assert.equal(after.battle.earned,5000);assert.equal(after.orders.earned,1000);assert.equal(boost.d.farm.tokens,100000);
+ boost.d.price.mult=.5;assert.equal(boost.api.model(boost.d).recoveryMode,false,'recovery uses strict below-50% threshold');boost.d.price.mult=1;await boost.step(5000);assert.ok(nodes(boostHost).some(n=>n.textContent.includes('当前100%，暂不消耗额度')));
+ boost.d.farm.fullRate='bad';boost.d.farm.today.fullRateBonus=-1;after=boost.api.model(boost.d);assert.equal(after.fullRate.creditUsd,null);assert.equal(after.fullRate.todayBonus,null);
+ boost.d.farm.fullRate=0;delete boost.d.farm.today.fullRateBonus;assert.equal(boost.api.model(boost.d).fullRate.todayBonus,0);assert.equal(boost.api.model(boost.d,Date.parse('2026-10-24T16:00:00Z')).fullRate.todayBonus,null,'yesterday top-ups are not labeled today after local midnight');boost.api.remove();
  console.log('PASS: earnings caps, feed/lock adjustments, independent battle/order caps, local daily order reset, pending battle loot, village stock, mine/oil, view-only polling, cache sharing, hidden/captcha guards, stale failures and cleanup');
 })().catch(e=>{console.error(e);process.exitCode=1});
