@@ -1,9 +1,9 @@
-/* Farming Season helper 1.20.5: original combat mechanics and unified controls. */
+/* Farming Season helper 1.20.6: original combat mechanics and unified controls. */
 (() => {
   if(location.hostname!=='farmingseason.io')throw Error('请只在 Farming Season 游戏页启动');
   const temp1=window.__farmGame||window.temp1;
   if(!temp1?.scene?.scenes)throw Error('未找到游戏实例，请使用扩展启动');
-  if(window.__farmLauncher?.status?.().version==='1.20.5')return '助手已开启，保留当前所有开关';
+  if(window.__farmLauncher?.status?.().version==='1.20.6')return '助手已开启，保留当前所有开关';
   const handoff={farm:window.__farmAutoFarm?.status?.(),automation:window.__farmAutomation?.status?.(),layout:window.__farmLayout?.status?.()};
   if(handoff.farm?.pending)throw Error('旧版农活尚未完成，请等队列完成后再次开启新版助手');
   window.__farmLauncher?.remove();
@@ -14,7 +14,7 @@
   function cleanup(){
     window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();
   }
-  window.__farmLauncher={status:()=>({installed:true,version:'1.20.5',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
+  window.__farmLauncher={status:()=>({installed:true,version:'1.20.6',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{
 /* Pure planning over read-only snapshots. Inputs are regular direction/Space/E keys. */
 (() => {
@@ -648,9 +648,9 @@
   const summarize=orders=>orders.map(o=>'#'+(o.index+1)+' '+Object.entries(o.items).map(([k,n])=>(names[k]||k)+'×'+n).join('、')).join('；');
   let budgetCache=null,budgetFlight=null,budgetGeneration=0;
   function invalidateBudget(owner){if(!owner||budgetCache?.owner===owner||budgetFlight?.owner===owner){budgetCache=null;budgetFlight=null;budgetGeneration++}}
-  async function readBudget(owner,now,signal){
+  async function readBudget(owner,now,signal,force=false){
     const day=new Date(now).toISOString().slice(0,10),key=owner+'#'+day,t=performance.now();
-    if(budgetCache?.key===key&&t-budgetCache.at<30000)return {budget:budgetCache.budget,ageMs:t-budgetCache.at};
+    if(!force&&budgetCache?.key===key&&t-budgetCache.at<30000)return {budget:budgetCache.budget,ageMs:t-budgetCache.at};
     if(budgetFlight?.key===key)return budgetFlight.promise;
     const generation=budgetGeneration,flight={key,owner};
     flight.promise=(async()=>{
@@ -666,12 +666,17 @@
   const orderReset=d=>(Math.floor(d.now/86400000)+1)*86400000;
   const orderCap=d=>Math.floor(R.quote(d).pay(R.quote(d).l.harvest*.25));
   function budgetLeft(d,globalLeft){const spent=d.farm.orders?.day===orderDay(d)?d.farm.orders.dayTokens||0:0;return Math.max(0,Math.min(globalLeft,orderCap(d)-spent))}
+  function orderValue(d,order){
+    const q=R.quote(d);return Math.round(Object.entries(order.items).reduce((n,[k,count])=>{if(!values[k]||!Number.isSafeInteger(count)||count<1)throw Error('订单计价规则无法确认');return n+Math.max(1,Math.round(q.pay(values[k])*q.l.mult))*count},0)*1.5);
+  }
   function syncBoard(board,d,globalLeft){
-    let available=budgetLeft(d,globalLeft);
+    let available=budgetLeft(d,globalLeft);const immediate=available;
     const done=d.farm.orders?.day===board.day?d.farm.orders.done||[]:[];
-    for(const o of board.orders){o.baseReward??=o.reward;o.done=done.includes(o.index);o.reward=o.done?0:Math.min(o.baseReward,available);available-=o.reward}
+    for(const o of board.orders){o.baseReward??=o.reward;o.baseReward=Math.min(o.baseReward,orderValue(d,o));o.done=done.includes(o.index);o.reward=o.done?0:Math.min(o.baseReward,available);o.availableReward=o.done?0:Math.min(o.baseReward,immediate);available-=o.reward}
     return board;
   }
+  const reward=o=>Number.isFinite(o.availableReward)?o.availableReward:o.reward;
+  function allowedOrders(orders,config){return (orders||[]).filter(o=>o.forecast||config.workshopStars!==false||reward(o)>0).map(o=>({...o,reward:reward(o)}))}
   function queued(f,now,credits=null){
     const out={flour:0,bread:0,butter:0,cheese:0,cloth:0},ready=[];
     for(const s of f.structures.filter(s=>['mill','bakery','dairy','loom'].includes(s.kind)&&R.built(s,now))){
@@ -705,7 +710,7 @@
     const f=d.farm,jobs=[];
     if(f.level<2)return {jobs,note:'市政厅 2 级解锁作坊',wheat:0};
     if(!board||board.day!==orderDay(d)||board.owner!==f.owner)return {jobs,note:'读取今日订单后安排生产',wheat:0};
-    const p=demands(d,board.orders,config.workshopEat,config._prepCredits),neededEggs=Math.max(0,p.need.egg-stock(f,'egg')),neededMilk=Math.max(0,p.need.milk-stock(f,'milk')),neededWool=Math.max(0,p.need.wool-stock(f,'wool'));
+    const p=demands(d,allowedOrders(board.orders,config),config.workshopEat,config._prepCredits),neededEggs=Math.max(0,p.need.egg-stock(f,'egg')),neededMilk=Math.max(0,p.need.milk-stock(f,'milk')),neededWool=Math.max(0,p.need.wool-stock(f,'wool'));
     const notices=[],lines=[],scheduled=new Map();
     const make=(recipe,n)=>{const r=recipes[recipe],s=f.structures.find(s=>s.kind===r.building&&R.built(s,d.now));if(!n)return;if(!s){notices.push('未建'+names[r.building]+'，等待建造或备齐成品');return;}
       const prior=scheduled.get(s.id)||{until:Math.max(d.now,...(s.queue||[]).map(x=>x.until)),count:0};
@@ -752,7 +757,7 @@
       lines.push({label:names[kind],text});
     }
     const eatAvailable=Math.min(p.eat,Math.max(0,stock(f,'bread')-p.orders.reduce((n,o)=>n+(o.items.bread||0),0)));
-    const note=[...new Set(notices)].join('；')|| (neededWool?'还需 '+neededWool+' 份羊毛；保留后自动收取':neededMilk?'还需 '+neededMilk+' 份牛奶；保留后自动收取':neededEggs?'还需 '+neededEggs+' 个鸡蛋；保留后自动收取':p.wheat>wheatAvailable?'小麦不足，先保留 '+feedWheat(d,config.feedDays)+' 份作饲料':Object.values(p.queues.out).some(Boolean)?'作坊加工中，成品完成后收取':p.orders.length?'按今日全部订单安排生产（含星星订单）':'今日订单已完成');
+    const note=[...new Set(notices)].join('；')|| (neededWool?'还需 '+neededWool+' 份羊毛；保留后自动收取':neededMilk?'还需 '+neededMilk+' 份牛奶；保留后自动收取':neededEggs?'还需 '+neededEggs+' 个鸡蛋；保留后自动收取':p.wheat>wheatAvailable?'小麦不足，先保留 '+feedWheat(d,config.feedDays)+' 份作饲料':Object.values(p.queues.out).some(Boolean)?'作坊加工中，成品完成后收取':p.orders.length?(config.workshopStars===false?'按今日金币订单安排生产':'按今日订单安排生产（含星星订单）'):config.workshopStars===false&&board.orders.some(o=>!o.done&&!(reward(o)>0))?'纯星星订单已跳过':'今日订单已完成');
     return {jobs,note,lines,wheat:p.wheat,orders:p.orders,eatAvailable};
   }
 
@@ -765,9 +770,9 @@
       const expected=forecast(f.owner,board.day);
       if(board.orders.length!==3||expected.some((o,i)=>board.orders[i]?.index!==i||itemKey(board.orders[i].items)!==itemKey(o.items)))throw Error('实际订单与预测规则不一致');
       const day=new Date(orderReset(d)).toISOString().slice(0,10);
-      next={day,orders:forecast(f.owner,day)};
+      next={day,orders:forecast(f.owner,day).map(o=>({...o,forecast:true}))};
     }catch(e){return {...today,prep:{error:e.message},note:today.note+'；次日备货暂停：'+e.message}}
-    const current=demands(d,board.orders,config.workshopEat),pantry={...f.pantry};
+    const current=demands(d,allowedOrders(board.orders,config),config.workshopEat),pantry={...f.pantry};
     for(const k of Object.keys(current.need))pantry[k]=Math.max(0,stock(f,k)-current.need[k]);
     const credits=new Map(),left={};
     for(const k of Object.keys(current.need))left[k]=Math.max(0,current.need[k]-stock(f,k));
@@ -789,7 +794,7 @@
     const currentJobs=today.jobs.filter(j=>j.kind!=='craft-keep');
     const preparation=future.jobs.filter(j=>j.kind==='craft-start'&&!busyToday[recipes[j.recipe].building]||['craft-eggs','craft-milk','craft-wool'].includes(j.kind)&&!currentJobs.some(x=>x.kind===j.kind)).map(j=>({...j,prep:true}));
     preparation.sort((a,b)=>(recipes[b.recipe]?.ms||0)-(recipes[a.recipe]?.ms||0));
-    const directBread=board.orders.filter(o=>!o.done).reduce((n,o)=>n+(o.items.bread||0),0)+next.orders.reduce((n,o)=>n+(o.items.bread||0),0);
+    const directBread=allowedOrders(board.orders,config).filter(o=>!o.done).reduce((n,o)=>n+(o.items.bread||0),0)+next.orders.reduce((n,o)=>n+(o.items.bread||0),0);
     const late=preparation.some(j=>j.finishAt>orderReset(d))||Object.keys(futureNeed.need).some(k=>{
       const missing=Math.max(0,futureNeed.need[k]-stock(virtual.farm,k));
       let onTime=0,total=0;for(const s of f.structures)for(const b of s.queue||[])if(b.r===k){const n=credits.get(b)||0;total+=n;if(b.until<=orderReset(d))onTime+=n}
@@ -816,10 +821,10 @@
     if(p.kind==='craft-start'||p.kind==='craft-take'){const s=f.structures.find(s=>s.id===p.id);return !!s&&JSON.stringify(s.queue||[])!==p.before}
     return false;
   }
-  window.__farmWorkshop={recipes,stock,week,orderDay,orderReset,orderCap,budgetLeft,syncBoard,readBudget,invalidateBudget,forecast,queued,feedWheat,demands,plan,pendingDone};
+  window.__farmWorkshop={recipes,stock,week,orderDay,orderReset,orderCap,budgetLeft,orderValue,syncBoard,reward,allowedOrders,readBudget,invalidateBudget,forecast,queued,feedWheat,demands,plan,pendingDone};
 })();
 
-/* Compare bounded, available market supply with the ordinary recipe graph. */
+/* Authorize purchases against one actual order, including its sunk costs. */
 (() => {
   const R=window.__farmRules,W=window.__farmWorkshop;
   const names={bread:'面包',flour:'面粉',egg:'鸡蛋',wheat:'小麦',milk:'牛奶',butter:'黄油',cheese:'奶酪',wool:'羊毛',cloth:'布料'};
@@ -838,9 +843,9 @@
     for(const b of f.structures)for(const q of b.queue||[])if(W.recipes[q.r]&&q.until<=deadline)s[q.r]+=W.recipes[q.r].count;
     return s;
   }
-  function solve(d,config,target,stock,quotes,budget,deadline){
+  function solve(d,target,stock,quotes,budget,deadline){
     const f=d.farm,by={},memo={},energyUnit=R.quote(d).energy10/10;
-    for(const k of items){by[k]=quotes.filter(x=>x.item===k&&x.exp>d.now&&x.price<=config['marketMax_'+k]).sort((a,b)=>a.price-b.price||a.id.localeCompare(b.id));memo[k]=new Map()}
+    for(const k of items){by[k]=quotes.filter(x=>x.item===k&&x.exp>d.now).sort((a,b)=>a.price-b.price||a.id.localeCompare(b.id));memo[k]=new Map()}
     const purchase=(k,count)=>{
       count=Math.max(0,count);if(memo[k].has(count))return memo[k].get(count);
       let left=count,cost=0;const buys=[];
@@ -864,40 +869,97 @@
       const counts={bread,flour,butter,cheese,cloth};let cost=0;const buys=[];
       for(const k of items){const n=Math.max(0,required[k]-stock[k]-(counts[k]||0)*(W.recipes[k]?.count||1)),offer=purchase(k,n);if(!offer){cost=Infinity;break}cost+=offer.cost;if(cost>budget){cost=Infinity;break}buys.push(...offer.buys)}
       if(!Number.isFinite(cost))continue;
-      const energy=Object.values(counts).filter(Boolean).length*2,score=cost+energy*energyUnit,finish=Math.max(d.now,flour?millEnd:0,bread?bakeryEnd:0,butter+cheese?dairyEnd:0,cloth?loomEnd:0);
-      if(!best||score<best.score||score===best.score&&(cost<best.cost||cost===best.cost&&finish<best.finish))best={cost,energy,score,finish,buys,counts};
+      const energy=Object.values(counts).filter(Boolean).length*2,energyCost=energy*energyUnit,score=cost+energyCost,finish=Math.max(d.now,flour?millEnd:0,bread?bakeryEnd:0,butter+cheese?dairyEnd:0,cloth?loomEnd:0);
+      if(!best||score<best.score||score===best.score&&(cost<best.cost||cost===best.cost&&finish<best.finish))best={cost,energy,energyCost,score,finish,buys,counts};
     }
     return best;
   }
-  function plan(d,config,board,workshop,quotes,spent=0){
+  const margin=.10;
+  const signature=o=>JSON.stringify(Object.entries(o.items).sort(([a],[b])=>a.localeCompare(b)));
+  const key=(day,index)=>day+'#'+index;
+  const terms=d=>{const q=R.quote(d);return JSON.stringify([d.farm.level,d.price.pay,d.price.mult,q.bonus,q.nftCapBonus,q.nftYieldBonus])};
+  function initialize(d,ledger){
+    ledger.orderCosts??={};
+    if(!ledger.orderCosts||typeof ledger.orderCosts!=='object'||Array.isArray(ledger.orderCosts))throw Error('订单成本记录异常，已暂停');
+    for(const [k,c]of Object.entries(ledger.orderCosts))if(!/^\d{4}-\d{2}-\d{2}#[0-2]$/.test(k)||!c||typeof c.signature!=='string'||!Number.isSafeInteger(c.cash)||c.cash<0||!Number.isSafeInteger(c.energy)||c.energy<0||!Number.isFinite(c.energyCost)||c.energyCost<0)throw Error('订单成本记录异常，已暂停');
+    const day=W.orderDay(d);
+    if(!ledger.marketLegacy){const assigned=Object.entries(ledger.orderCosts).filter(([k])=>k.startsWith(day+'#')).reduce((n,[,c])=>n+c.cash,0);ledger.marketLegacy={day,cash:Math.max(0,(ledger.marketSpent||0)-assigned)}}
+    if(typeof ledger.marketLegacy.day!=='string'||!Number.isSafeInteger(ledger.marketLegacy.cash)||ledger.marketLegacy.cash<0)throw Error('旧版采购记录异常，已暂停');
+    const active=ledger.activeMarketOrder;
+    if(active&&(!ledger.orderCosts[key(active.day,active.index)]||ledger.orderCosts[key(active.day,active.index)].signature!==active.signature))throw Error('订单投入记录不完整，已暂停');
+    if(active&&(typeof active.day!=='string'||!Number.isInteger(active.index)||active.index<0||active.index>2||typeof active.signature!=='string'))throw Error('待完成订单记录异常，已暂停');
+  }
+  function reconcile(d,ledger){
+    const day=W.orderDay(d),active=ledger.activeMarketOrder;let changed=false;
+    if(active&&(active.day!==day||d.farm.orders?.day===day&&d.farm.orders.done?.includes(active.index))){ledger.activeMarketOrder=null;changed=true}
+    for(const k of Object.keys(ledger.orderCosts))if(!k.startsWith(day+'#')){delete ledger.orderCosts[k];changed=true}
+    if(ledger.marketLegacy.day!==day){ledger.marketLegacy={day,cash:0};changed=true}
+    return changed;
+  }
+  function activeOrder(d,board,ledger){
+    const a=ledger?.activeMarketOrder;if(!a||a.day!==W.orderDay(d)||!board||board.day!==a.day)return null;
+    const order=board.orders.find(o=>o.index===a.index&&!o.done);
+    return {...a,valid:!!order&&a.signature===signature(order)};
+  }
+  function charge(d,ledger,job){
+    if(!job.orderKey)return;
+    const a=ledger.activeMarketOrder;
+    if(a&&(key(a.day,a.index)!==job.orderKey||a.signature!==job.orderSignature))throw Error('订单归属变化，已暂停');
+    const row=ledger.orderCosts[job.orderKey]??={signature:job.orderSignature,cash:0,energy:0,energyCost:0};
+    if(row.signature!==job.orderSignature)throw Error('订单内容变化，已暂停');
+    if(job.kind==='craft-buy')row.cash+=job.cost;
+    if(job.kind==='craft-start'){row.energy+=job.energy;row.energyCost+=job.energy*R.quote(d).energy10/10}
+    ledger.activeMarketOrder={day:W.orderDay(d),index:job.orderIndex,signature:job.orderSignature};
+  }
+  function plan(d,config,board,quotes,state={}){
     if(!config.marketBuy)return null;
-    const empty=note=>({job:null,holdCraft:false,note});
-    if(!(config.marketBudget>0)||!items.some(k=>config['marketMax_'+k]>0))return empty('市场补料未设置预算或单价上限');
-    if(!board||board.owner!==d.farm.owner||board.day!==W.orderDay(d))return empty('市场补料等待核对今日订单');
-    const budget=Math.max(0,Math.min(config.marketBudget-spent,d.farm.tokens));
-    if(!budget)return empty('今日市场预算已用完，或余额不足');
-    const deadline=W.orderReset(d),target=targets(board.orders),stock=inventory(d,deadline);
-    // Grain held for animal feed is not sold or silently consumed by a purchase plan.
+    const empty=(note,extra={})=>({job:null,holdCraft:false,note,...extra});
+    if(!board||board.owner!==d.farm.owner||board.day!==W.orderDay(d))return empty('自动采购等待核对今日订单');
+    const quote=R.quote(d);
+    if(!quote.rewardMultKnown)return empty('奖励发放比例未确认，暂停采购');
+    if(!Number.isFinite(d.farm.tokens)||d.farm.tokens<0||d.farm.tokens>Number.MAX_SAFE_INTEGER||!Number.isFinite(quote.energy10))return empty('余额或能量报价无法确认，暂停采购');
+    const active=activeOrder(d,board,state);
+    if(active&&!active.valid)return empty('已投入成本的订单内容变化，暂停采购',{active});
+    const deadline=W.orderReset(d),stock=inventory(d,deadline),day=board.day;
     stock.wheat=Math.max(0,stock.wheat-W.feedWheat(d,config.feedDays));
-    let selected=solve(d,config,target,stock,quotes,budget,deadline),prep=false,chosenTarget=target;
-    const covered=items.every(k=>stock[k]>=target[k]);
-    if(covered&&config.workshopPrep&&workshop?.prep&&!workshop.prep.error){
-      const nextTarget=targets(workshop.prep.orders),left={...stock};for(const k of items)left[k]=Math.max(0,left[k]-target[k]);
-      selected=solve(d,config,nextTarget,left,quotes,budget,deadline);prep=true;chosenTarget=nextTarget;
+    const evaluations=[];let best=null;
+    for(const order of board.orders){
+      if(order.done||order.forecast||active&&order.index!==active.index)continue;
+      const reward=W.reward(order);
+      if(!Number.isFinite(reward)||!(reward>0)){evaluations.push({index:order.index,reason:'仅星星，不采购'});continue}
+      const orderKey=key(day,order.index),past=state.orderCosts?.[orderKey]||{cash:0,energy:0,energyCost:0};
+      if(past.signature&&past.signature!==signature(order)){evaluations.push({index:order.index,reason:'订单内容变化，成本无法核对'});continue}
+      const legacy=state.marketLegacy?.day===day?state.marketLegacy.cash:0;
+      const spent=past.cash+past.energyCost+legacy;
+      const target=targets([order]);
+      // Existing final goods are credited first; all raw inputs and outputs are
+      // reserved together by solve. No forecast reward authorizes a purchase.
+      const selected=solve(d,target,stock,quotes,d.farm.tokens,deadline);
+      const profitable=selected&&spent+selected.score<=reward*(1-margin)+1e-6;
+      let use=selected;
+      // Stock-only work may continue even when it does not earn 10% margin.
+      // Its energy is still booked to this order before later purchases.
+      if(!profitable)use=solve(d,target,stock,[],0,deadline);
+      if(!use){evaluations.push({index:order.index,reward,cost:selected?spent+selected.score:null,net:selected?reward-spent-selected.score:null,reason:selected?'预计净增不足奖励的10%，不采购':'报价、余额或加工时间不足'});continue}
+      const net=reward-spent-use.score;
+      const candidate={selected:use,order,target,net,reward,past,legacy,profitable:!!profitable,active,orderKey,orderSignature:signature(order),orderIndex:order.index,feedReserve:W.feedWheat(d,config.feedDays)};
+      evaluations.push({index:order.index,reward,cost:spent+use.score,net,reason:profitable?'保留至少10%余量':'仅用库存加工，不采购'});
+      if(!best||active||candidate.profitable&&!best.profitable||candidate.profitable===best.profitable&&(net>best.net||net===best.net&&use.finish<best.selected.finish))best=candidate;
     }
-    if(!selected)return empty('可用报价、预算或加工时间不足；等待库存或市场变化');
-    const context={target:chosenTarget,reserve:prep?target:{},feedReserve:W.feedWheat(d,config.feedDays),prep};
-    if(!selected.buys.length)return {...context,...empty('现有库存及队列可完成'+(prep?'次日备货':'今日订单')+'；预计加工 '+selected.energy+' 能量'),selected};
-    // Prefer finished goods first. Each original Buy 1 click is confirmed before
-    // re-reading demand and prices; never submit an unconfirmed purchase twice.
+    if(!best)return empty(active?'当前订单已投入成本，暂停追加采购；等待库存或奖励恢复':'暂无可盈利采购的今日订单；'+(config.workshopStars===false?'已跳过纯星星订单':'纯星星只用库存')+'；次日备货不采购',{active,evaluations});
+    const {selected,order,reward,past,legacy,net}=best;
+    const amount=n=>n.toLocaleString('zh-CN',{maximumFractionDigits:2});
+    const summary='订单 #'+(order.index+1)+' · 预计可领 '+amount(reward)+' 金币\n已采购 '+amount(past.cash+legacy)+' · 还需采购 '+amount(selected.cost)+' · 加工能量折算 '+amount(past.energyCost+selected.energyCost)+' 金币\n预计净增 '+amount(net)+' 金币'+(best.profitable?' · 保留至少10%余量':' · 仅用库存，不采购');
+    const short='订单 #'+(order.index+1)+' · 预计净增 '+amount(net)+' 金币';
+    if(!selected.buys.length)return {...best,...empty(short+'；仅用库存和队列完成'),summary,evaluations};
     selected.buys.sort((a,b)=>outputs.includes(b.item)-outputs.includes(a.item)||a.price-b.price);
     const buy=selected.buys[0];
-    const job={kind:'craft-buy',route:'market',action:'market-buy',arg:buy.id+':1',listingId:buy.id,item:buy.item,count:1,unit:buy.price,cost:buy.price,before:W.stock(d.farm,buy.item),tokensBefore:d.farm.tokens,energy:0,value:0,prep};
-    return {...context,job,selected,holdCraft:true,note:(prep?'次日备货':'今日订单')+'最低估算方案：采购 '+selected.cost+' 金币，加工 '+selected.energy+' 能量；先买'+names[buy.item]+'（每份 '+buy.price+'）'};
+    const job={kind:'craft-buy',route:'market',action:'market-buy',arg:buy.id+':1',listingId:buy.id,item:buy.item,count:1,unit:buy.price,cost:buy.price,before:W.stock(d.farm,buy.item),tokensBefore:d.farm.tokens,energy:0,value:0,orderKey:best.orderKey,orderIndex:order.index,orderSignature:best.orderSignature};
+    return {...best,job,holdCraft:true,note:short+'；先买'+names[buy.item]+'（每份 '+buy.price+'）',summary,evaluations};
   }
   function productionJobs(d,result,existing){
     if(!result?.selected||result.holdCraft)return [];
-    const f=d.farm,available={};for(const k of items)available[k]=Math.max(0,W.stock(f,k)-(result.reserve[k]||0)-(result.target[k]||0));
+    const f=d.farm,available={};for(const k of items)available[k]=Math.max(0,W.stock(f,k)-(result.target[k]||0));
     available.wheat=Math.max(0,available.wheat-result.feedReserve);
     const counts=result.selected.counts,jobs=[],extra=!Object.values(counts).some(Boolean);
     for(const recipe of ['flour','bread','butter','cheese','cloth']){
@@ -905,14 +967,14 @@
       // Once order stock is covered, spare inventory may still make the usual
       // energy bread. Never buy its ingredients or take reserved order stock.
       const spare=extra&&['flour','bread'].includes(recipe)?existing.find(j=>j.kind==='craft-start'&&j.recipe===recipe&&!j.prep):null;
-      let n=counts[recipe]||spare?.count||0;for(const [k,v]of Object.entries(r.inputs))n=Math.min(n,Math.floor(available[k]/v));
-      if(!n)continue;for(const [k,v]of Object.entries(r.inputs))available[k]-=n*v;
-      jobs.push({kind:'craft-start',route:'rwa',id:s.id,action:'craft-start',arg:recipe+':'+n,recipe,count:n,finishAt:result.selected.finish,before:JSON.stringify(s.queue||[]),energy:2,value:0,prep:spare?false:result.prep});
+      const desired=counts[recipe]||spare?.count||0;let n=desired;for(const [k,v]of Object.entries(r.inputs))n=Math.min(n,Math.floor(available[k]/v));
+      if(!n||!spare&&n<desired)continue;for(const [k,v]of Object.entries(r.inputs))available[k]-=n*v;
+      jobs.push({kind:'craft-start',route:'rwa',id:s.id,action:'craft-start',arg:recipe+':'+n,recipe,count:n,finishAt:result.selected.finish,before:JSON.stringify(s.queue||[]),energy:2,value:0,prep:false,...(spare?{}:{orderKey:result.orderKey,orderIndex:result.orderIndex,orderSignature:result.orderSignature})});
     }
     return jobs;
   }
   function pendingDone(p,d){return p.kind==='craft-buy'&&W.stock(d.farm,p.item)>=p.before+p.count&&d.farm.tokens<=p.tokensBefore-p.cost}
-  window.__farmMarket={names,items,listings,targets,solve,plan,productionJobs,pendingDone};
+  window.__farmMarket={names,items,listings,targets,solve,margin,signature,terms,initialize,reconcile,activeOrder,charge,plan,productionJobs,pendingDone};
 })();
 
 /* One confirmed helper task at a time; observe actual game workers before dispatch. */
@@ -920,7 +982,7 @@
   if(window.__farmAutomation)return '农务队列已安装';
   const R=window.__farmRules,W=window.__farmWorkshop,M=window.__farmMarket;if(!R||!W||!M)throw Error('缺少农务规则');
   const flags={fields:false,feed:false,collect:false,orchard:false,mine:false,oil:false,income:false,fishing:false,energy:false,workshop:false};
-  let config={crop:'radish',reserve:10,smart:true,feedDays:2,feedGold:false,feedBudget:0,energyBudget:0,workshopEat:true,workshopPrep:true,marketBuy:false,marketBudget:0,...Object.fromEntries(M.items.map(k=>['marketMax_'+k,0]))};
+  let config={crop:'radish',reserve:10,smart:true,feedDays:2,feedGold:false,feedBudget:0,energyBudget:0,workshopEat:true,workshopPrep:true,marketBuy:false,workshopStars:true};
   try{const c=JSON.parse(localStorage.getItem('farm-helper.auto-farm-config'));if(R.crops[c?.crop])config.crop=c.crop;if(Number.isInteger(c?.reserve)&&c.reserve>=0&&c.reserve<=100)config.reserve=c.reserve}catch{}
   const handoff=window.__farmHandoff;if(handoff?.farm){config.crop=R.crops[handoff.farm.crop]?handoff.farm.crop:config.crop;config.reserve=handoff.farm.reserve??config.reserve;flags.fields=!!handoff.farm.enabled}
   if(handoff?.automation?.flags)for(const key of Object.keys(flags))if(key in handoff.automation.flags)flags[key]=!!handoff.automation.flags[key];
@@ -930,7 +992,7 @@
   let route=null,activeMark=null,needsReview=false,message='选择需要的自动功能',controller=null;
   let pending=null,host=null,sections={},controls={},notes={},requestCount=0,viewOnly=false;
   let board=null,orderBudget=null,budgetAt=-Infinity,workshopFault=null,workshopRetry=0;
-  let lastPlan={jobs:[],hint:{}},lastWorkers=null,market=[],marketAt=-Infinity,marketFault=null,marketPlan=null;
+  let lastPlan={jobs:[],hint:{}},lastWorkers=null,market=[],marketAt=-Infinity,marketFault=null,marketPlan=null,verifiedPurchase=null;
   const activity=window.__farmActivity;
   const prefix='farm-helper.farm-v2.';
   const visible=e=>!!e&&e.isConnected&&!e.hidden&&!!e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden';
@@ -958,7 +1020,9 @@
     ledger.marketSpent??=0;
     if(!Number.isSafeInteger(ledger.marketSpent)||ledger.marketSpent<0)throw Error('市场预算记录异常，暂停购买');
     if(typeof ledger.day!=='string'||!Number.isFinite(ledger.energySpent)||ledger.energySpent<0||ledger.pending&&!['feed','collect','harvest','plant','orchard','mine','oil','income','energy','craft-start','craft-take','craft-order','craft-keep','craft-eggs','craft-milk','craft-wool','craft-eat','craft-buy','fish-bait','fish-run','fish-reel'].includes(ledger.pending.kind))throw Error('保存的任务数据异常，请检查后再启动');
+    M.initialize(d,ledger);
     pending=ledger.pending;
+    saveLedger();
     saveFlags();
     syncControls();
   }
@@ -1056,7 +1120,7 @@
       }
     }
     let workshopPlan=null;
-    if(flags.workshop){try{workshopPlan=W.plan(d,config,board);hint.workshop=workshopFault||workshopPlan.note;jobs.push(...workshopPlan.jobs)}catch(error){hint.workshop=error.message}}
+    if(flags.workshop){try{const active=M.activeOrder(d,board,ledger);const scoped=active?{...board,orders:board.orders.filter(o=>o.index===active.index)}:board;workshopPlan=W.plan(d,active?{...config,workshopPrep:false}:config,scoped);hint.workshop=workshopFault||workshopPlan.note;jobs.push(...workshopPlan.jobs)}catch(error){hint.workshop=error.message}}
     if(flags.collect){const p=R.collectPlan(d);hint.collect=p.ready.length?p.ready.length+' 份产品待收':'等待动物产出';if(p.ready.length){if(flags.workshop&&(!board||board.day!==W.orderDay(d)||board.owner!==f.owner))hint.collect='等作坊确认鸡蛋、牛奶和羊毛用途';else if(p.value>0&&p.value+2>q.room)hint.collect='暂存空间不足，暂停收集';else jobs.push({kind:'collect',route:'animals',action:'collect-all',energy:p.energy,value:Math.min(p.value,q.remaining),ids:p.ready.map(a=>a.id)})}}
     if(flags.orchard){const ps=R.orchardPlan(d);hint.orchard=ps.length?ps.length+' 座果园可采摘':'等待水果成熟';for(const p of ps){if(p.value>0&&p.value+2>q.room){hint.orchard='暂存空间不足，暂停采摘';continue}jobs.push({kind:'orchard',route:'orchard',id:p.id,action:p.ready.length>1?'harvest-orchard':'harvest-tree',arg:p.ready[0].i,before:p.ready.map(x=>({i:x.i,lastHarvestAt:x.lastHarvestAt})),energy:2,value:Math.min(p.value,q.remaining)})}}
     if(flags.income){const daily=q.pay(q.l.passive)*q.bonus,amount=Math.min(daily*2,(f.passiveBank||0)+daily*Math.max(0,d.now-f.passiveSince)/86400000);hint.income='约每小时领取，避免满仓';if(amount>=Math.max(1,daily/24))jobs.push({kind:'income',action:'claim',root:'#hud',energy:0,value:Math.floor(amount),before:f.passiveSince})}
@@ -1083,14 +1147,23 @@
       }else hint.fields='等待作物成熟';
     }
     if(flags.workshop&&config.marketBuy){
-      marketPlan=M.plan(d,config,board,workshopPlan,market,ledger?.marketSpent||0);
-      hint.workshop=marketFault?marketFault+'；'+(hint.workshop||''):(marketPlan?.note||hint.workshop);
-      for(let i=jobs.length-1;i>=0;i--)if(jobs[i].kind==='craft-keep'&&!f.structures.some(s=>s.kind===jobs[i].route&&R.built(s,d.now)))jobs.splice(i,1);
-      if(marketPlan?.selected&&!marketFault){
-        const production=M.productionJobs(d,marketPlan,jobs);
-        for(let i=jobs.length-1;i>=0;i--)if(jobs[i].kind==='craft-start')jobs.splice(i,1);
-        jobs.push(...production);if(marketPlan.job)jobs.push(marketPlan.job);
+      marketPlan=M.plan(d,config,board,market,ledger||{});
+      hint.workshop=marketFault?marketFault+'；'+(marketPlan?.note||hint.workshop):(marketPlan?.note||hint.workshop);
+      const production=marketPlan?.selected&&!marketFault?M.productionJobs(d,marketPlan,jobs):[];
+      if(!production.length&&!marketPlan?.selected){
+        // No spending for stars or forecasts. Keep their ordinary stock-only
+        // production separate from the selected cash order.
+        const active=marketPlan?.active;
+        const stars=board?{...board,orders:board.orders.filter(o=>!(W.reward(o)>0)&&(!active||o.index===active.index))}:board;
+        const own=W.plan(d,{...config,workshopPrep:false,workshopEat:!active&&config.workshopEat},stars);
+        production.push(...own.jobs.filter(j=>j.kind==='craft-start'));
+        if(!active)production.push(...jobs.filter(j=>j.kind==='craft-start'&&j.prep));
       }
+      for(let i=jobs.length-1;i>=0;i--){
+        const j=jobs[i];
+        if(j.kind==='craft-start'||j.kind==='craft-keep'&&!f.structures.some(s=>s.kind===j.route&&R.built(s,d.now))||marketPlan?.active&&j.kind==='craft-order'&&j.index!==marketPlan.active.index)jobs.splice(i,1);
+      }
+      jobs.push(...production);if(marketPlan?.job&&!marketFault)jobs.push(marketPlan.job);
     }else marketPlan=null;
     if(flags.workshop&&config.workshopEat&&workshopPlan?.eatAvailable){
       const next=jobs.find(j=>j.energy>0),reserve=reserveFeed(d);
@@ -1174,7 +1247,7 @@
       const allocated=done?0:Math.min(reward,available);available-=allocated;
       return {index,items,baseReward:reward,reward:allocated,done};
     });
-    return {owner:d.farm.owner,day:W.orderDay(d),at:d.now,orders};
+    const result={owner:d.farm.owner,day:W.orderDay(d),at:d.now,terms:M.terms(d),orders};return W.syncBoard(result,d,orderBudget?.left||0);
   }
   function prepareFishingButton(job){
     if(job.kind==='fish-run'){
@@ -1204,6 +1277,7 @@
   function storePending(job,d,reserved=0){
     pending={...job,at:d.now,activeMs:0,day:job.day||R.calendar(d.farm,d.now).day,reserved};
     ledger.pending=pending;
+    M.charge(d,ledger,job);
     if(job.kind==='energy')ledger.energySpent+=reserved;
     if(job.kind==='craft-buy')ledger.marketSpent+=reserved;
     if(!saveLedger()){pending=null;return false}return true;
@@ -1213,7 +1287,7 @@
     if(pauseReason()||leaseOwner!==owner||!storageOK||viewOnly||!flags[job.kind.startsWith('fish-')?'fishing':job.kind.startsWith('craft-')?'workshop':job.kind==='harvest'||job.kind==='plant'?'fields':job.kind==='orchard'?'orchard':job.kind==='income'?'income':job.kind])return false;
     if(job.kind==='craft-order'){
       const currentBoard=readOrders(d),current=currentBoard?.orders.find(o=>o.index===job.index);
-      if(!current||current.done||JSON.stringify(current.items)!==JSON.stringify(job.items)){board=currentBoard;message='订单奖励或内容变化，重新核对';return false}
+      if(!current||current.done||!W.allowedOrders([current],config).length||JSON.stringify(current.items)!==JSON.stringify(job.items)){board=currentBoard;message='订单奖励或内容变化，重新核对';return false}
     }
     if(!prepareFishingButton(job))return false;
     prepareWorkshopButton(job);
@@ -1239,18 +1313,34 @@
       const row=market.find(x=>x.id===job.listingId&&x.item===job.item&&x.price===job.unit&&x.qty>=1&&x.exp>d.now);
       const shown=el.closest('.good-row')?.querySelector('.mkt-p b')?.textContent?.trim()||'';
       const price=/^[\d,\s]+$/.test(shown)?Number(shown.replace(/[,\s]/g,'')):NaN;
-      if(!config.marketBuy||!row||d.now-marketAt>30000||price!==job.unit||job.unit>config['marketMax_'+job.item]||ledger.marketSpent+job.cost>config.marketBudget||d.farm.tokens<job.cost){message='市场报价、需求或预算待重新核对';return false}
+      const current=M.plan(d,config,board,market,ledger),fresh=current?.job;
+      if(!config.marketBuy||!row||price!==job.unit||d.farm.tokens<job.cost||!fresh||fresh.orderKey!==job.orderKey||fresh.orderSignature!==job.orderSignature||fresh.arg!==job.arg||fresh.unit!==job.unit||verifiedPurchase?.epoch!==epoch||verifiedPurchase?.arg!==job.arg||verifiedPurchase?.orderKey!==job.orderKey||performance.now()-verifiedPurchase.at>2000){message='订单奖励、报价或利润变化，停止本次采购并重新核对';return false}
       reserved=job.cost;
     }
+    const costsBefore=JSON.stringify(ledger.orderCosts),activeBefore=ledger.activeMarketOrder;
     if(!storePending(job,d,reserved))return false;
     requestCount++;
-    if(!click(el)){if(job.kind==='craft-buy')ledger.marketSpent-=reserved;pending=null;ledger.pending=null;saveLedger();return false}
+    if(!click(el)){ledger.orderCosts=JSON.parse(costsBefore);ledger.activeMarketOrder=activeBefore;if(job.kind==='craft-buy')ledger.marketSpent-=reserved;pending=null;ledger.pending=null;saveLedger();return false}
     activity?.add('submitted','已提交：'+activity.describe(job)+(job.kind==='plant'&&job.plantReason?'；'+job.plantReason:''));
     if(job.kind==='craft-order'){budgetAt=-Infinity;W.invalidateBudget(owner)}
     if(job.kind==='craft-buy'){marketAt=-Infinity;market=[]}
     route=null;activeMark=performance.now();
     message=job.kind==='energy'?'已购买一小包能量，等待确认':'已提交'+({feed:'喂食',collect:'动物收集',orchard:'果园采摘',income:'村庄领取',mine:'矿车收取',oil:'抽油',harvest:'批量收获',plant:'批量播种','craft-buy':'市场采购','craft-start':'作坊加工','craft-take':'成品收取','craft-order':'订单交付','craft-keep':'产物保留设置','craft-eggs':'鸡蛋收取','craft-milk':'牛奶收取','fish-bait':'鱼饵购买','fish-run':'连续钓鱼','fish-reel':'收竿','craft-eat':'面包补能量'}[job.kind]||'农活')+'，等待游戏完成';
     return true;
+  }
+  async function verifyPurchase(job,d,generation){
+    const result=await W.readBudget(owner,d.now,controller.signal,true);
+    if(removed||generation!==epoch||pauseReason())return false;
+    orderBudget=result.budget;budgetAt=d.now-result.ageMs;W.syncBoard(board,d,orderBudget.left);
+    const response=await fetch('/api/farm/market',{credentials:'same-origin',cache:'no-store',signal:controller.signal});
+    if(!response.ok)throw Error('采购前市场复核失败 '+response.status);
+    const quotes=M.listings(await response.json());
+    if(removed||generation!==epoch||pauseReason())return false;
+    market=quotes;marketAt=d.now;marketFault=null;
+    const checked=M.plan(d,config,board,market,ledger),fresh=checked?.job;
+    marketPlan=checked;
+    if(!fresh||fresh.orderKey!==job.orderKey||fresh.orderSignature!==job.orderSignature||fresh.arg!==job.arg||fresh.unit!==job.unit){message='奖励或报价变化，重新选择有利润的方案';return false}
+    verifiedPurchase={epoch,at:performance.now(),arg:job.arg,orderKey:job.orderKey};return true;
   }
   async function tick(force=false){
     if(removed||busy||(!force&&!Object.values(flags).some(Boolean)&&!pending))return;
@@ -1264,7 +1354,7 @@
       const d=await response.json(),f=d.farm;
       if(!f||!Array.isArray(f.fields)||!Array.isArray(f.animals)||!Array.isArray(f.structures)||!Number.isFinite(f.today?.energy)||!Number.isFinite(d.now)||d.owner!==f.owner||d.access?.open!==true)throw Error('农场数据或访问状态不匹配');
       if(removed||generation!==epoch||pauseReason())return;
-      R.quote(d);snapshot=d;snapshotAt=performance.now();loadOwner(d);dayLedger(d);
+      R.quote(d);snapshot=d;snapshotAt=performance.now();loadOwner(d);dayLedger(d);if(M.reconcile(d,ledger))saveLedger();
       if(!Object.values(flags).some(Boolean)&&!pending){releaseIfIdle();message='选择需要的自动功能';return}
       if(!storageOK||!await acquireLease())return;
       const workers=workerState(d);lastWorkers=workers?{total:workers.total,idle:workers.idle,building:workers.building,busy:workers.busy,queued:workers.jobs.length,detailed:workers.detailed}:null;
@@ -1287,12 +1377,13 @@
         else message='农夫忙碌 · '+workers.jobs.length+' 项农务等待完成';
         return;
       }
-      if(board&&(board.owner!==f.owner||board.day!==W.orderDay(d)))board=null;
+      if(board&&(board.owner!==f.owner||board.day!==W.orderDay(d)||board.terms!==M.terms(d)))board=null;
       const urgentFeed=flags.feed&&R.feedPlan(d).hungry.length>0;
       if(flags.workshop&&!urgentFeed&&d.now>=workshopRetry){try{
           if(d.now-budgetAt>=30000||Number.isFinite(budgetAt)&&new Date(budgetAt).toISOString().slice(0,10)!==new Date(d.now).toISOString().slice(0,10)){
             const result=await W.readBudget(owner,d.now,controller.signal);
             if(removed||generation!==epoch||pauseReason())return;
+            if(orderBudget?.left===0&&result.budget.left>0)board=null;
             orderBudget=result.budget;budgetAt=d.now-result.ageMs;
           }
         if(!board){
@@ -1301,7 +1392,7 @@
         }
         W.syncBoard(board,d,orderBudget.left);
       }catch(error){board=null;route=null;workshopFault=error.message;workshopRetry=d.now+30000}}
-      if(flags.workshop&&config.marketBuy&&board&&config.marketBudget>(ledger.marketSpent||0)&&M.items.some(k=>config['marketMax_'+k]>0)&&d.now-marketAt>=30000){
+      if(flags.workshop&&config.marketBuy&&board&&board.orders.some(o=>!o.done&&W.reward(o)>0)&&d.now-marketAt>=30000){
         try{
           const response=await fetch('/api/farm/market',{credentials:'same-origin',cache:'no-store',signal:controller.signal});
           if(!response.ok)throw Error('市场报价读取失败 '+response.status);
@@ -1326,6 +1417,7 @@
         }
         if(job.energy&&job.kind!=='feed'&&job.kind!=='collect'&&!['craft-eggs','craft-milk'].includes(job.kind)&&f.today.energy<job.energy+protectedEnergy){waiting='为待喂动物保留能量，暂停其他农活';continue}
         if(!navigate(job)){message='打开'+({animals:'动物',fields:'田地',orchard:'果园',rwa:'矿油'}[job.route]||'游戏')+'面板';return}
+        if(job.kind==='craft-buy'&&!await verifyPurchase(job,d,generation))return;
         if(submit(job,d))return;
         waiting=message||'等待游戏按钮可用';
       }
@@ -1336,10 +1428,7 @@
   function assignOption(key,value){
     if(typeof key!=='string')return false;
     if(key==='crop'){if(!R.crops[value])return false}
-    else if(['smart','feedGold','workshopEat','workshopPrep','marketBuy'].includes(key)){if(typeof value!=='boolean')return false}
-    else if((key.startsWith('marketMax_')&&M.items.includes(key.slice(10)))||key==='marketBudget'){
-      if(!Number.isSafeInteger(Number(value))||Number(value)<0||Number(value)>1000000)return false;value=Number(value);
-    }
+    else if(['smart','feedGold','workshopEat','workshopPrep','marketBuy','workshopStars'].includes(key)){if(typeof value!=='boolean')return false}
     else if(['reserve','feedDays','feedBudget','energyBudget'].includes(key)){
       const bounds={reserve:[0,100],feedDays:[1,7],feedBudget:[0,1000000],energyBudget:[0,1000000]}[key];
       if(!Number.isSafeInteger(Number(value))||Number(value)<bounds[0]||Number(value)>bounds[1])return false;value=Number(value);
@@ -1375,33 +1464,27 @@
   check(daily,'每天买满20鱼饵并连续钓完','fishing');note(daily,'fishing','含当天手动购买；按游戏报价花金币。满额后鱼进鱼箱，不自动卖鱼或切饲料。');
   const ed=el('details'),es=el('summary','能量补购设置');ed.append(es);check(ed,'允许自动购买能量','energy');number(ed,'每日能量购买限额','energyBudget',0,1000000);note(ed,null,'只补 10 点小包；需有可估算的新增收益。未开启或限额为 0 时不购买。');daily.append(ed);
   const workshop=el('section');workshop.id='farm-workshop-controls';sections.workshop=workshop;
-  check(workshop,'自动作坊与全部订单','workshop');
-  note(workshop,null,'按订单保留鸡蛋、牛奶和羊毛，制作面粉、面包、黄油、奶酪和布料并收取成品；仅奖励星星的订单也完成。');
+  check(workshop,'自动作坊与订单','workshop');
+  check(workshop,'完成仅奖励星星的订单','workshopStars',true);
+  note(workshop,null,'按订单保留鸡蛋、牛奶和羊毛，制作面粉、面包、黄油、奶酪和布料并收取成品；纯星星订单按开关执行；只用库存和自产材料，不为它采购。');
   check(workshop,'提前备次日订单','workshopPrep',true);
   const prepDetails=el('details'),prepSummary=el('summary','次日备货计划');prepDetails.append(prepSummary);workshop.append(prepDetails);
   const prepInfo=note(prepDetails,null,'开启作坊后核对今日规则，按次日预测备货；刷新后以实际订单为准。');prepInfo.style.whiteSpace='pre-line';
   check(workshop,'缺能量时吃多余面包','workshopEat',true);
   note(workshop,null,'每天最多吃 4 个；先留今天和次日订单所需面包。面包补能只吃库存；市场补料仅用于订单。');
-  const marketDetails=el('details');marketDetails.append(el('summary','市场补料设置'));
-  check(marketDetails,'允许市场补料（成品与原料比价）','marketBuy',true);
-  number(marketDetails,'每日采购预算（金币）','marketBudget',0,1000000);
-  const marketSelect=el('select');marketSelect.setAttribute('aria-label','设置单价上限的物品');
-  for(const key of M.items){const option=el('option',M.names[key]);option.value=key;marketSelect.append(option)}
-  marketSelect.value='bread';marketDetails.append(marketSelect);
-  const priceLabel=el('label','每份最高价（金币）'),marketPrice=el('input');priceLabel.className='fh-number';marketPrice.type='number';marketPrice.min='0';marketPrice.max='1000000';marketPrice.step='1';marketPrice.setAttribute('aria-label','所选物品每份最高价');priceLabel.append(marketPrice);marketDetails.append(priceLabel);
-  marketSelect.onchange=()=>{marketPrice.value=String(config['marketMax_'+marketSelect.value]);marketSelect.blur()};
-  marketPrice.onchange=()=>{configure('marketMax_'+marketSelect.value,Number(marketPrice.value));marketPrice.value=String(config['marketMax_'+marketSelect.value]);marketPrice.blur()};
-  const marketInfo=note(marketDetails,null,'');
+  check(workshop,'自动采购有利润的订单','marketBuy',true);
+  const marketDetails=el('details');marketDetails.append(el('summary','订单采购评估'));
+  const marketInfo=note(marketDetails,null,'');marketInfo.style.whiteSpace='pre-line';
   const marketResolve=el('button','我已核对未成交，停止等待');marketResolve.type='button';marketResolve.className='fh-recheck';marketResolve.hidden=true;
-  marketResolve.onclick=()=>{if(!needsReview||pending?.kind!=='craft-buy')return;pending=null;ledger.pending=null;needsReview=false;config.marketBuy=false;market=[];marketAt=-Infinity;epoch++;route=null;saveLedger();saveConfig();activity?.add('setting','已由用户核对市场未成交；停止等待，关闭自动采购并保留预算占用');message='市场采购已关闭；预算保留，避免不明结果被重复购买';render()};marketDetails.append(marketResolve);
-  note(marketDetails,null,'逐项设置限价；0 表示不买该物品。先用现有成品；缺口比较成品、原料及加工能量，能量按商店小包单价折算。考虑队列、容量与订单刷新时间，不为吃面包补能采购。今天优先，再为已验证的次日订单备货。每次买 1 份并确认到账，预算按本账号本地日计算，仅统计本助手采购。失败或结果不明也保留预算，不反复购买。');workshop.append(marketDetails);
+  marketResolve.onclick=()=>{if(!needsReview||pending?.kind!=='craft-buy')return;pending=null;ledger.pending=null;needsReview=false;config.marketBuy=false;market=[];marketAt=-Infinity;epoch++;route=null;saveLedger();saveConfig();activity?.add('setting','已由用户核对市场未成交；停止等待，关闭自动采购并保留订单成本');message='市场采购已关闭；已记成本保留，避免不明结果被重复购买';render()};marketDetails.append(marketResolve);
+  note(marketDetails,null,'先用库存，比价成品和原料加工；采购及加工能量折算总成本不超过实际可领金币的90%。加工能量按商店小包折算，已有库存不按卖价估值。包含本订单已经投入的采购和加工成本，每次购买前重查全服预算与最低可用报价。只对今天实际金币订单采购；纯星星和次日预测只用库存。逐份确认，未知结果不重复购买。');workshop.append(marketDetails);
   note(workshop,'workshop','开启后读取今日订单，尽量合批生产');
   const workshopLines={};for(const [key,label]of [['mill','磨坊'],['bakery','面包房'],['dairy','乳品坊'],['loom','织布坊']]){workshopLines[key]=note(workshop,null,label+' · 等待读取');workshopLines[key].setAttribute('aria-label',label+'运行状态');}
   note(workshop,null,'小麦优先保留动物饲料。自动补种先打满收获，再补粮；开启市场补料后不为作坊缺口自动改种。需要提前种粮可在田地页手动选择小麦/玉米。喂养仍由动物页控制。暂停后已排加工继续，鸡蛋、牛奶和羊毛保留设置保持最后状态。');
   const state=el('p');state.id='farm-task-state';state.className='fh-task-state';state.setAttribute('role','status');state.setAttribute('aria-live','polite');
   const recheck=el('button','重新检查');recheck.type='button';recheck.className='fh-recheck';recheck.onclick=()=>{needsReview=false;if(pending)pending.activeMs=0;backoff=0;lastRead=-Infinity;activeMark=null;void tick(true)};
   function syncControls(){for(const [key,{input,option}]of Object.entries(controls)){if(document.activeElement===input)continue;if(input.type==='checkbox')input.checked=option?config[key]:flags[key];else input.value=String(config[key])}}
-  function render(){syncControls();marketResolve.hidden=!(needsReview&&pending?.kind==='craft-buy');if(document.activeElement!==marketPrice)marketPrice.value=String(config['marketMax_'+marketSelect.value]);marketInfo.textContent='今日助手采购 '+(ledger?.marketSpent||0)+' / '+config.marketBudget+' 金币；'+M.items.filter(k=>config['marketMax_'+k]>0).map(k=>M.names[k]+'≤'+config['marketMax_'+k]).join('、');prepDetails.hidden=!config.workshopPrep;prepSummary.textContent='次日备货计划';prepInfo.textContent='读取今日订单后计算次日备货';if(snapshot&&flags.workshop&&board){try{const plan=W.plan(snapshot,config,board);prepInfo.textContent=plan.prep?.error?'次日备货暂停：'+plan.prep.error:plan.prep?plan.prep.day+' 08:00（北京时间）预计：'+plan.prep.summary.replaceAll('；','\n')+'\n'+(plan.prep.shortages.length?'还缺：'+plan.prep.shortages.map(x=>({egg:'鸡蛋',milk:'牛奶',wool:'羊毛',flour:'面粉',bread:'面包',butter:'黄油',cheese:'奶酪',cloth:'布料'}[x.item]||x.item)+'×'+x.count).join('、'):'库存和队列已覆盖')+(plan.prep.late?'；部分加工预计晚于刷新完成。':'。'):'读取今日订单后计算次日备货';prepSummary.textContent='次日备货 · '+(plan.prep?.error?'需核对':plan.prep?.late?'部分晚于刷新':plan.prep?.covered?'库存及队列已覆盖':'按缺口准备');for(const line of plan.lines||[]){const key={磨坊:'mill',面包房:'bakery',乳品坊:'dairy',织布坊:'loom'}[line.label];workshopLines[key].textContent=line.label+' · '+line.text;}}catch{}}state.textContent=message;recheck.hidden=!needsReview;window.__farmLayout?.mountTask?.(state,recheck)}
+  function render(){syncControls();marketResolve.hidden=!(needsReview&&pending?.kind==='craft-buy');marketInfo.textContent=(marketPlan?.summary||marketPlan?.note||'开启后自动核算，无需填写限价或预算')+(marketPlan&&!marketPlan.summary?(marketPlan.evaluations||[]).map(e=>'\n订单 #'+(e.index+1)+(Number.isFinite(e.cost)?' · 可领 '+e.reward+' · 总成本约 '+e.cost.toFixed(2)+' · 净增约 '+e.net.toFixed(2):'')+' · '+e.reason).join(''):'')+'\n今日助手采购 '+(ledger?.marketSpent||0)+' 金币';prepDetails.hidden=!config.workshopPrep;prepSummary.textContent='次日备货计划';prepInfo.textContent='读取今日订单后计算次日备货';if(snapshot&&flags.workshop&&board){try{const plan=W.plan(snapshot,config,board);prepInfo.textContent=plan.prep?.error?'次日备货暂停：'+plan.prep.error:plan.prep?plan.prep.day+' 08:00（北京时间）预计：'+plan.prep.summary.replaceAll('；','\n')+'\n'+(plan.prep.shortages.length?'还缺：'+plan.prep.shortages.map(x=>({egg:'鸡蛋',milk:'牛奶',wool:'羊毛',flour:'面粉',bread:'面包',butter:'黄油',cheese:'奶酪',cloth:'布料'}[x.item]||x.item)+'×'+x.count).join('、'):'库存和队列已覆盖')+(plan.prep.late?'；部分加工预计晚于刷新完成。':'。'):'读取今日订单后计算次日备货';prepSummary.textContent='次日备货 · '+(plan.prep?.error?'需核对':plan.prep?.late?'部分晚于刷新':plan.prep?.covered?'库存及队列已覆盖':'按缺口准备');for(const line of plan.lines||[]){const key={磨坊:'mill',面包房:'bakery',乳品坊:'dairy',织布坊:'loom'}[line.label];workshopLines[key].textContent=line.label+' · '+line.text;}}catch{}}state.textContent=message;recheck.hidden=!needsReview;window.__farmLayout?.mountTask?.(state,recheck)}
   function execution(){
     const now=performance.now(),enabled=Object.entries(flags).filter(([,v])=>v).map(([k])=>k),pause=pauseReason();
     const status=!storageOK||needsReview||now<backoff||workshopFault?'error':pause?'paused':pending?'running':enabled.length?'waiting':'idle';
@@ -1410,7 +1493,7 @@
       items.push('能量 '+f.today.energy+' · 已提交 '+requestCount+' 次');
       if(flags.fishing){try{items.push(R.fishingPlan(snapshot).note)}catch{}}
       if(flags.workshop&&board){try{
-        const p=W.demands(snapshot,board.orders,config.workshopEat);
+        const p=W.demands(snapshot,W.allowedOrders(board.orders,config),config.workshopEat);
         items.push('牛奶 '+W.stock(f,'milk')+'（需 '+p.need.milk+'） · 黄油 '+W.stock(f,'butter')+'（需 '+p.need.butter+'） · 奶酪 '+W.stock(f,'cheese')+'（需 '+p.need.cheese+'）');
         items.push('鸡蛋 '+W.stock(f,'egg')+'（需 '+p.need.egg+'） · 面粉 '+W.stock(f,'flour')+'（需 '+p.need.flour+'） · 面包 '+W.stock(f,'bread')+'（需 '+p.need.bread+'）');
         if(f.level>=3)items.push('羊毛 '+W.stock(f,'wool')+'（需 '+p.need.wool+'） · 布料 '+W.stock(f,'cloth')+'（需 '+p.need.cloth+'）');
@@ -2178,5 +2261,5 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 1.20.5 已开启；请先完成面板内的游戏版本检查';
+  return '助手 1.20.6 已开启；请先完成面板内的游戏版本检查';
 })();

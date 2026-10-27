@@ -19,9 +19,9 @@
   const summarize=orders=>orders.map(o=>'#'+(o.index+1)+' '+Object.entries(o.items).map(([k,n])=>(names[k]||k)+'×'+n).join('、')).join('；');
   let budgetCache=null,budgetFlight=null,budgetGeneration=0;
   function invalidateBudget(owner){if(!owner||budgetCache?.owner===owner||budgetFlight?.owner===owner){budgetCache=null;budgetFlight=null;budgetGeneration++}}
-  async function readBudget(owner,now,signal){
+  async function readBudget(owner,now,signal,force=false){
     const day=new Date(now).toISOString().slice(0,10),key=owner+'#'+day,t=performance.now();
-    if(budgetCache?.key===key&&t-budgetCache.at<30000)return {budget:budgetCache.budget,ageMs:t-budgetCache.at};
+    if(!force&&budgetCache?.key===key&&t-budgetCache.at<30000)return {budget:budgetCache.budget,ageMs:t-budgetCache.at};
     if(budgetFlight?.key===key)return budgetFlight.promise;
     const generation=budgetGeneration,flight={key,owner};
     flight.promise=(async()=>{
@@ -37,12 +37,17 @@
   const orderReset=d=>(Math.floor(d.now/86400000)+1)*86400000;
   const orderCap=d=>Math.floor(R.quote(d).pay(R.quote(d).l.harvest*.25));
   function budgetLeft(d,globalLeft){const spent=d.farm.orders?.day===orderDay(d)?d.farm.orders.dayTokens||0:0;return Math.max(0,Math.min(globalLeft,orderCap(d)-spent))}
+  function orderValue(d,order){
+    const q=R.quote(d);return Math.round(Object.entries(order.items).reduce((n,[k,count])=>{if(!values[k]||!Number.isSafeInteger(count)||count<1)throw Error('订单计价规则无法确认');return n+Math.max(1,Math.round(q.pay(values[k])*q.l.mult))*count},0)*1.5);
+  }
   function syncBoard(board,d,globalLeft){
-    let available=budgetLeft(d,globalLeft);
+    let available=budgetLeft(d,globalLeft);const immediate=available;
     const done=d.farm.orders?.day===board.day?d.farm.orders.done||[]:[];
-    for(const o of board.orders){o.baseReward??=o.reward;o.done=done.includes(o.index);o.reward=o.done?0:Math.min(o.baseReward,available);available-=o.reward}
+    for(const o of board.orders){o.baseReward??=o.reward;o.baseReward=Math.min(o.baseReward,orderValue(d,o));o.done=done.includes(o.index);o.reward=o.done?0:Math.min(o.baseReward,available);o.availableReward=o.done?0:Math.min(o.baseReward,immediate);available-=o.reward}
     return board;
   }
+  const reward=o=>Number.isFinite(o.availableReward)?o.availableReward:o.reward;
+  function allowedOrders(orders,config){return (orders||[]).filter(o=>o.forecast||config.workshopStars!==false||reward(o)>0).map(o=>({...o,reward:reward(o)}))}
   function queued(f,now,credits=null){
     const out={flour:0,bread:0,butter:0,cheese:0,cloth:0},ready=[];
     for(const s of f.structures.filter(s=>['mill','bakery','dairy','loom'].includes(s.kind)&&R.built(s,now))){
@@ -76,7 +81,7 @@
     const f=d.farm,jobs=[];
     if(f.level<2)return {jobs,note:'市政厅 2 级解锁作坊',wheat:0};
     if(!board||board.day!==orderDay(d)||board.owner!==f.owner)return {jobs,note:'读取今日订单后安排生产',wheat:0};
-    const p=demands(d,board.orders,config.workshopEat,config._prepCredits),neededEggs=Math.max(0,p.need.egg-stock(f,'egg')),neededMilk=Math.max(0,p.need.milk-stock(f,'milk')),neededWool=Math.max(0,p.need.wool-stock(f,'wool'));
+    const p=demands(d,allowedOrders(board.orders,config),config.workshopEat,config._prepCredits),neededEggs=Math.max(0,p.need.egg-stock(f,'egg')),neededMilk=Math.max(0,p.need.milk-stock(f,'milk')),neededWool=Math.max(0,p.need.wool-stock(f,'wool'));
     const notices=[],lines=[],scheduled=new Map();
     const make=(recipe,n)=>{const r=recipes[recipe],s=f.structures.find(s=>s.kind===r.building&&R.built(s,d.now));if(!n)return;if(!s){notices.push('未建'+names[r.building]+'，等待建造或备齐成品');return;}
       const prior=scheduled.get(s.id)||{until:Math.max(d.now,...(s.queue||[]).map(x=>x.until)),count:0};
@@ -123,7 +128,7 @@
       lines.push({label:names[kind],text});
     }
     const eatAvailable=Math.min(p.eat,Math.max(0,stock(f,'bread')-p.orders.reduce((n,o)=>n+(o.items.bread||0),0)));
-    const note=[...new Set(notices)].join('；')|| (neededWool?'还需 '+neededWool+' 份羊毛；保留后自动收取':neededMilk?'还需 '+neededMilk+' 份牛奶；保留后自动收取':neededEggs?'还需 '+neededEggs+' 个鸡蛋；保留后自动收取':p.wheat>wheatAvailable?'小麦不足，先保留 '+feedWheat(d,config.feedDays)+' 份作饲料':Object.values(p.queues.out).some(Boolean)?'作坊加工中，成品完成后收取':p.orders.length?'按今日全部订单安排生产（含星星订单）':'今日订单已完成');
+    const note=[...new Set(notices)].join('；')|| (neededWool?'还需 '+neededWool+' 份羊毛；保留后自动收取':neededMilk?'还需 '+neededMilk+' 份牛奶；保留后自动收取':neededEggs?'还需 '+neededEggs+' 个鸡蛋；保留后自动收取':p.wheat>wheatAvailable?'小麦不足，先保留 '+feedWheat(d,config.feedDays)+' 份作饲料':Object.values(p.queues.out).some(Boolean)?'作坊加工中，成品完成后收取':p.orders.length?(config.workshopStars===false?'按今日金币订单安排生产':'按今日订单安排生产（含星星订单）'):config.workshopStars===false&&board.orders.some(o=>!o.done&&!(reward(o)>0))?'纯星星订单已跳过':'今日订单已完成');
     return {jobs,note,lines,wheat:p.wheat,orders:p.orders,eatAvailable};
   }
 
@@ -136,9 +141,9 @@
       const expected=forecast(f.owner,board.day);
       if(board.orders.length!==3||expected.some((o,i)=>board.orders[i]?.index!==i||itemKey(board.orders[i].items)!==itemKey(o.items)))throw Error('实际订单与预测规则不一致');
       const day=new Date(orderReset(d)).toISOString().slice(0,10);
-      next={day,orders:forecast(f.owner,day)};
+      next={day,orders:forecast(f.owner,day).map(o=>({...o,forecast:true}))};
     }catch(e){return {...today,prep:{error:e.message},note:today.note+'；次日备货暂停：'+e.message}}
-    const current=demands(d,board.orders,config.workshopEat),pantry={...f.pantry};
+    const current=demands(d,allowedOrders(board.orders,config),config.workshopEat),pantry={...f.pantry};
     for(const k of Object.keys(current.need))pantry[k]=Math.max(0,stock(f,k)-current.need[k]);
     const credits=new Map(),left={};
     for(const k of Object.keys(current.need))left[k]=Math.max(0,current.need[k]-stock(f,k));
@@ -160,7 +165,7 @@
     const currentJobs=today.jobs.filter(j=>j.kind!=='craft-keep');
     const preparation=future.jobs.filter(j=>j.kind==='craft-start'&&!busyToday[recipes[j.recipe].building]||['craft-eggs','craft-milk','craft-wool'].includes(j.kind)&&!currentJobs.some(x=>x.kind===j.kind)).map(j=>({...j,prep:true}));
     preparation.sort((a,b)=>(recipes[b.recipe]?.ms||0)-(recipes[a.recipe]?.ms||0));
-    const directBread=board.orders.filter(o=>!o.done).reduce((n,o)=>n+(o.items.bread||0),0)+next.orders.reduce((n,o)=>n+(o.items.bread||0),0);
+    const directBread=allowedOrders(board.orders,config).filter(o=>!o.done).reduce((n,o)=>n+(o.items.bread||0),0)+next.orders.reduce((n,o)=>n+(o.items.bread||0),0);
     const late=preparation.some(j=>j.finishAt>orderReset(d))||Object.keys(futureNeed.need).some(k=>{
       const missing=Math.max(0,futureNeed.need[k]-stock(virtual.farm,k));
       let onTime=0,total=0;for(const s of f.structures)for(const b of s.queue||[])if(b.r===k){const n=credits.get(b)||0;total+=n;if(b.until<=orderReset(d))onTime+=n}
@@ -187,5 +192,5 @@
     if(p.kind==='craft-start'||p.kind==='craft-take'){const s=f.structures.find(s=>s.id===p.id);return !!s&&JSON.stringify(s.queue||[])!==p.before}
     return false;
   }
-  window.__farmWorkshop={recipes,stock,week,orderDay,orderReset,orderCap,budgetLeft,syncBoard,readBudget,invalidateBudget,forecast,queued,feedWheat,demands,plan,pendingDone};
+  window.__farmWorkshop={recipes,stock,week,orderDay,orderReset,orderCap,budgetLeft,orderValue,syncBoard,reward,allowedOrders,readBudget,invalidateBudget,forecast,queued,feedWheat,demands,plan,pendingDone};
 })();
