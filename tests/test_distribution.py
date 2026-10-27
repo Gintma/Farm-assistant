@@ -41,6 +41,16 @@ class CombatTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout)
 
 
+@unittest.skipUnless(shutil.which('node'), 'Node.js is required for economic regression checks')
+class EconomyTests(unittest.TestCase):
+    def test_economic_regressions(self):
+        for name in ('test-farm-rules.cjs', 'test-farm-automation.cjs', 'test-workshop.cjs',
+                     'test-fishing.cjs', 'test-earnings-progress.cjs', 'test-reward-mult.cjs'):
+            with self.subTest(suite=name):
+                result = run('node', str(ROOT / 'tests' / name), cwd=ROOT)
+                self.assertEqual(result.returncode, 0, result.stdout)
+
+
 class UpdaterTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='farm updater ')

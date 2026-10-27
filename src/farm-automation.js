@@ -90,7 +90,7 @@
         if(p.coins&&(!config.feedGold||config.feedBudget<=0))hint.feed+='；未允许金币买饲料';
         else if(p.coins&&Math.ceil(p.coins*1.15)+p.hungry.length+Math.max(0,f.today.feedSpent||0)>config.feedBudget)hint.feed+='；超出今日金币限额';
         else{
-          const production=p.hungry.reduce((n,a)=>{const r=R.animals[a.kind];return n+q.value(r.meal*2)},0);
+          const production=p.hungry.reduce((n,a)=>{const r=R.animals[a.kind];return n+q.animalValue(r.meal*2)},0);
           jobs.push({kind:'feed',route:'animals',action:'feed-all',energy:p.energy,value:Math.max(0,production-p.coins),spend:p.coins,ids:p.hungry.map(a=>a.id),before:p.hungry.map(a=>({id:a.id,lastFedAt:a.lastFedAt})),meal:p.meal});
         }
       }
@@ -248,7 +248,9 @@
     }
     if(job.kind==='energy'){
       const shown=Number((el.textContent.match(/[\d,]+(?:\.\d+)?/g)||[]).at(-1)?.replaceAll(',',''));
-      const expected=R.quote(d).energy10;
+      const quote=R.quote(d);
+      if(!quote.rewardMultKnown){message='奖励发放比例未确认，暂不自动购买能量';return false}
+      const expected=quote.energy10;
       if(!(shown>0)||Math.abs(shown-expected)>1){message='能量报价尚未同步，等待下一次检查';return false}
       reserved=Math.ceil(shown*1.15);
       if(!flags.energy||config.energyBudget<=0||ledger.energySpent+reserved>config.energyBudget||d.farm.tokens<reserved){message='能量购买超过每日预算或余额不足';return false}
@@ -312,11 +314,11 @@
         const q=R.quote(d),protectedEnergy=['feed','collect','income'].includes(job.kind)?0:reserveFeed(d);
         if(f.today.energy<job.energy){
           const packs=Math.ceil((job.energy-f.today.energy)/10),fullCost=Math.ceil(q.energy10*1.15)*packs;
-          if(flags.energy&&job.value>fullCost&&ledger.energySpent+fullCost<=config.energyBudget){
+          if(flags.energy&&q.rewardMultKnown&&job.value>fullCost&&ledger.energySpent+fullCost<=config.energyBudget){
             const buy={kind:'energy',route:'energy',action:'energy',arg:'10',before:f.today.energy,bought:f.today.bought||0,energy:0,value:job.value};
             if(navigate(buy))submit(buy,d);else message='打开能量小包，检查价格和预算';return;
           }
-          waiting='能量不足：本项需 '+job.energy+'，等待补充';continue;
+          waiting=!q.rewardMultKnown&&flags.energy?'奖励发放比例未确认，暂不自动购买能量':'能量不足：本项需 '+job.energy+'，等待补充';continue;
         }
         if(job.energy&&job.kind!=='feed'&&job.kind!=='collect'&&!['craft-eggs','craft-milk'].includes(job.kind)&&f.today.energy<job.energy+protectedEnergy){waiting='为待喂动物保留能量，暂停其他农活';continue}
         if(!navigate(job)){message='打开'+({animals:'动物',fields:'田地',orchard:'果园',rwa:'矿油'}[job.route]||'游戏')+'面板';return}

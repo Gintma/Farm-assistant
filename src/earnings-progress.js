@@ -30,7 +30,7 @@
     }
     const oilText=!oil?'未建油井':!R.built(oil,now)?'建设中 · '+duration(oil.buildUntil-now):oil.collectDay===cal.day?'今日已抽取 · '+duration(cal.nextMidnight-now)+'后重置':'今日可抽取';
     const goods=f.goods,inventory=goods?['gold','silver','oil'].map((k,i)=>['金','银','油'][i]+' '+(Number.isFinite(goods[k])?goods[k].toLocaleString('zh-CN',{maximumFractionDigits:2}):'—')).join(' · '):'资源库存：等待数据';
-    return {harvest,battle,carry:f.harvestCarry||0,carryCap:q.base*7,feedSpent:f.today.feedSpent||0,nftCapBonus:q.nftCapBonus,nftYieldBonus:q.nftYieldBonus,reset:cal.nextMidnight,sameDay,
+    return {harvest,battle,rewardMult:q.rewardMult,rewardMultKnown:q.rewardMultKnown,carry:f.harvestCarry||0,carryCap:q.base*7,feedSpent:f.today.feedSpent||0,nftCapBonus:q.nftCapBonus,nftYieldBonus:q.nftYieldBonus,reset:cal.nextMidnight,sameDay,
       village:{stored:villageStored,cap:villageCap,hourly:villageDaily/24,fullIn:Number.isFinite(villageStored)&&villageDaily>0?(villageCap-villageStored)/villageDaily*dayMs:null},
       mining,oilText,inventory,orders,budget,orderReset:W.orderReset({...d,now}),
       day:today.day};
@@ -38,6 +38,7 @@
   const el=(tag,text)=>{const n=document.createElement(tag);if(text)n.textContent=text;return n};
   const root=el('section');root.id='farm-earnings-controls';root.setAttribute('aria-label','收益进度');
   const stamp=el('p','打开此页后读取收益数据');stamp.className='fh-earnings-stamp';root.append(stamp);
+  const payoutLine=el('p','奖励发放比例：等待服务器数据');payoutLine.className='fh-earnings-note';root.append(payoutLine);
   const today=el('section'),todayHead=el('div'),todayTitle=el('h3','今日额度'),overall=el('span'),todayBody=el('div'),resetLine=el('p');
   today.className='fh-earnings-group';todayHead.className='fh-earnings-heading';overall.className='fh-earnings-overall';resetLine.className='fh-earnings-note fh-earnings-reset';todayHead.append(todayTitle,overall);today.append(todayHead,todayBody,resetLine);root.append(today);
   function disclosure(label){const box=el('details'),summary=el('summary',label),body=el('div');box.className='fh-earnings-details';box.append(summary,body);return {box,body}}
@@ -63,6 +64,7 @@
     const goal=scene?.run?.active&&!scene.tut?window.__farmCombatGoal?.status?.():null;
     const live=Number.isFinite(goal?.cap)&&Number.isFinite(goal?.dailyBeforeRun)&&Number.isFinite(goal?.earned)?{cap:goal.cap,earned:goal.dailyBeforeRun+goal.earned}:null;
     let view=null;try{if(data)view=model(data,now,budget&&new Date(now-Math.max(0,performance.now()-budgetAt)).toISOString().slice(0,10)===new Date(now).toISOString().slice(0,10)?budget:null,live)}catch{}
+    payoutLine.textContent=!view?'奖励发放比例：等待服务器数据':view.rewardMultKnown?'当前奖励发放比例 '+(view.rewardMult*100).toLocaleString('zh-CN',{maximumFractionDigits:2})+'% · 已计入收益与基础额度':'发放比例未返回 · 暂按100%估算，暂停自动购买能量';
     const ageText=Number.isFinite(age)?age<60000?'刚刚更新':Math.floor(age/60000)+'分钟前更新':'等待数据';
     const status=window.__farmVerification?.isBlocked()?'等待人工验证，暂停读取':document.hidden?'页面在后台，暂停读取':error?'读取失败，保留上次数据':view&&!view.sameDay?'跨日了，等待重新读取':age>=60000&&data?'数据已过期':'额度自动更新';
     stamp.textContent=status==='额度自动更新'?ageText:status+' · '+ageText;
@@ -80,7 +82,7 @@
       if(view.nftYieldBonus>1)textLine(quota.body,'NFT质押产出加成','+'+Math.round((view.nftYieldBonus-1)*100)+'%');
       if(view.feedSpent>0)textLine(quota.body,'饲料增加额度','+'+number(view.feedSpent));
     }
-    const shared=el('p','收获额度由作物、果园、动物及钓鱼共用。计价变化会调整当前上限，已得超过上限不表示仍可继续领取。');shared.className='fh-earnings-note';quota.body.append(shared);
+    const shared=el('p','收获额度由作物、果园、动物及钓鱼共用。奖励发放比例不降低购买价格；计价或比例变化会调整当前上限，已得超过上限不表示仍可继续领取。');shared.className='fh-earnings-note';quota.body.append(shared);
     const v=view?.village;
     const villageRow=summaryRow(stockBody,'村庄收入',v?number(v.stored):'—',v?v.fullIn===0?'满仓待领':'持续累积':'读取中');if(villageRow&&v?.fullIn===0)villageRow.dataset.urgent='true';
     const carts=view?.mining.carts;

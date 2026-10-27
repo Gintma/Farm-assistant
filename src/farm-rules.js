@@ -21,11 +21,18 @@
     const nftDays=f.nft?.on?f.nft.lockDays??0:0;
     const nftCapBonus=nftDays>=7?1.25:1,nftYieldBonus=1+({7:.05,14:.1,28:.15}[nftDays]||0);
     const harvestBonus=bonus*nftYieldBonus;
-    const pay=v=>Math.round(v/d.price.pay),charge=v=>Math.round(v/d.price.charge);
+    // Mirror the game's positive payout multiplier and 5%..100% frontend bounds.
+    // A missing field keeps legacy estimates, but cannot justify energy spending.
+    const rewardMultKnown=d.price.mult!==undefined;
+    const reportedMult=Number(d.price.mult);
+    if(rewardMultKnown&&(!Number.isFinite(reportedMult)||reportedMult<=0))throw Error('奖励发放比例无效，等待服务器更新');
+    const rewardMult=rewardMultKnown?Math.min(1,Math.max(.05,reportedMult)):1;
+    const pay=v=>Math.round(v/d.price.pay*rewardMult),charge=v=>Math.round(v/d.price.charge);
     const base=pay(l.harvest)*bonus,cap=base*nftCapBonus+(f.today.feedSpent||0);
     const carry=Math.max(0,f.harvestCarry||0),remaining=Math.max(0,cap-f.today.harvestEarned);
-    const value=v=>Math.floor(Math.round(pay(v)*l.mult)*harvestBonus);
-    return {cal,l,bonus,nftCapBonus,nftYieldBonus,harvestBonus,pay,charge,base,cap,carry,remaining,room:remaining+Math.max(0,base*7-carry),value,energy10:charge(.0045*l.mult*10)};
+    const value=v=>Math.floor(pay(v)*l.mult*harvestBonus);
+    const animalValue=v=>Math.floor(Math.round(pay(v)*l.mult)*harvestBonus);
+    return {cal,l,bonus,nftCapBonus,nftYieldBonus,harvestBonus,rewardMult,rewardMultKnown,pay,charge,animalValue,base,cap,carry,remaining,room:remaining+Math.max(0,base*7-carry),value,energy10:charge(.0045*l.mult*10)};
   }
   function building(f,a){
     const rule=animals[a.kind];if(!rule)return null;
@@ -52,7 +59,7 @@
   function collectPlan(d){
     const f=d.farm,q=quote(d),ready=f.animals.filter(a=>a.productReady),bs=new Map();let value=0;
     const kept={};
-    for(const a of ready){const r=animals[a.kind],b=building(f,a);if(!r||!b)throw Error('未知动物或建筑');bs.set(b.id,b);const item={chicken:'egg',cow:'milk',sheep:'wool'}[a.kind];if(item&&f.keep?.[item]&&(f.pantry?.[item]||0)+(kept[item]||0)<200){kept[item]=(kept[item]||0)+1;continue}value+=q.value(r.meal*4*r.days)}
+    for(const a of ready){const r=animals[a.kind],b=building(f,a);if(!r||!b)throw Error('未知动物或建筑');bs.set(b.id,b);const item={chicken:'egg',cow:'milk',sheep:'wool'}[a.kind];if(item&&f.keep?.[item]&&(f.pantry?.[item]||0)+(kept[item]||0)<200){kept[item]=(kept[item]||0)+1;continue}value+=q.animalValue(r.meal*4*r.days)}
     return {ready,value,energy:[...bs.values()].filter(b=>b.collectDay!==q.cal.day).length*2};
   }
   function orchardPlan(d){return d.farm.structures.filter(s=>s.kind==='orchard'&&built(s,d.now)).map(s=>{

@@ -1,9 +1,9 @@
-/* Farming Season helper 1.20.2: original combat mechanics and unified controls. */
+/* Farming Season helper 1.20.3: original combat mechanics and unified controls. */
 (() => {
   if(location.hostname!=='farmingseason.io')throw Error('请只在 Farming Season 游戏页启动');
   const temp1=window.__farmGame||window.temp1;
   if(!temp1?.scene?.scenes)throw Error('未找到游戏实例，请使用扩展启动');
-  if(window.__farmLauncher?.status?.().version==='1.20.2')return '助手已开启，保留当前所有开关';
+  if(window.__farmLauncher?.status?.().version==='1.20.3')return '助手已开启，保留当前所有开关';
   const handoff={farm:window.__farmAutoFarm?.status?.(),automation:window.__farmAutomation?.status?.(),layout:window.__farmLayout?.status?.()};
   if(handoff.farm?.pending)throw Error('旧版农活尚未完成，请等队列完成后再次开启新版助手');
   window.__farmLauncher?.remove();
@@ -14,7 +14,7 @@
   function cleanup(){
     window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();
   }
-  window.__farmLauncher={status:()=>({installed:true,version:'1.20.2',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
+  window.__farmLauncher={status:()=>({installed:true,version:'1.20.3',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{
 /* Pure planning over read-only snapshots. Inputs are regular direction/Space/E keys. */
 (() => {
@@ -504,11 +504,18 @@
     const nftDays=f.nft?.on?f.nft.lockDays??0:0;
     const nftCapBonus=nftDays>=7?1.25:1,nftYieldBonus=1+({7:.05,14:.1,28:.15}[nftDays]||0);
     const harvestBonus=bonus*nftYieldBonus;
-    const pay=v=>Math.round(v/d.price.pay),charge=v=>Math.round(v/d.price.charge);
+    // Mirror the game's positive payout multiplier and 5%..100% frontend bounds.
+    // A missing field keeps legacy estimates, but cannot justify energy spending.
+    const rewardMultKnown=d.price.mult!==undefined;
+    const reportedMult=Number(d.price.mult);
+    if(rewardMultKnown&&(!Number.isFinite(reportedMult)||reportedMult<=0))throw Error('奖励发放比例无效，等待服务器更新');
+    const rewardMult=rewardMultKnown?Math.min(1,Math.max(.05,reportedMult)):1;
+    const pay=v=>Math.round(v/d.price.pay*rewardMult),charge=v=>Math.round(v/d.price.charge);
     const base=pay(l.harvest)*bonus,cap=base*nftCapBonus+(f.today.feedSpent||0);
     const carry=Math.max(0,f.harvestCarry||0),remaining=Math.max(0,cap-f.today.harvestEarned);
-    const value=v=>Math.floor(Math.round(pay(v)*l.mult)*harvestBonus);
-    return {cal,l,bonus,nftCapBonus,nftYieldBonus,harvestBonus,pay,charge,base,cap,carry,remaining,room:remaining+Math.max(0,base*7-carry),value,energy10:charge(.0045*l.mult*10)};
+    const value=v=>Math.floor(pay(v)*l.mult*harvestBonus);
+    const animalValue=v=>Math.floor(Math.round(pay(v)*l.mult)*harvestBonus);
+    return {cal,l,bonus,nftCapBonus,nftYieldBonus,harvestBonus,rewardMult,rewardMultKnown,pay,charge,animalValue,base,cap,carry,remaining,room:remaining+Math.max(0,base*7-carry),value,energy10:charge(.0045*l.mult*10)};
   }
   function building(f,a){
     const rule=animals[a.kind];if(!rule)return null;
@@ -535,7 +542,7 @@
   function collectPlan(d){
     const f=d.farm,q=quote(d),ready=f.animals.filter(a=>a.productReady),bs=new Map();let value=0;
     const kept={};
-    for(const a of ready){const r=animals[a.kind],b=building(f,a);if(!r||!b)throw Error('未知动物或建筑');bs.set(b.id,b);const item={chicken:'egg',cow:'milk',sheep:'wool'}[a.kind];if(item&&f.keep?.[item]&&(f.pantry?.[item]||0)+(kept[item]||0)<200){kept[item]=(kept[item]||0)+1;continue}value+=q.value(r.meal*4*r.days)}
+    for(const a of ready){const r=animals[a.kind],b=building(f,a);if(!r||!b)throw Error('未知动物或建筑');bs.set(b.id,b);const item={chicken:'egg',cow:'milk',sheep:'wool'}[a.kind];if(item&&f.keep?.[item]&&(f.pantry?.[item]||0)+(kept[item]||0)<200){kept[item]=(kept[item]||0)+1;continue}value+=q.animalValue(r.meal*4*r.days)}
     return {ready,value,energy:[...bs.values()].filter(b=>b.collectDay!==q.cal.day).length*2};
   }
   function orchardPlan(d){return d.farm.structures.filter(s=>s.kind==='orchard'&&built(s,d.now)).map(s=>{
@@ -901,7 +908,7 @@
         if(p.coins&&(!config.feedGold||config.feedBudget<=0))hint.feed+='；未允许金币买饲料';
         else if(p.coins&&Math.ceil(p.coins*1.15)+p.hungry.length+Math.max(0,f.today.feedSpent||0)>config.feedBudget)hint.feed+='；超出今日金币限额';
         else{
-          const production=p.hungry.reduce((n,a)=>{const r=R.animals[a.kind];return n+q.value(r.meal*2)},0);
+          const production=p.hungry.reduce((n,a)=>{const r=R.animals[a.kind];return n+q.animalValue(r.meal*2)},0);
           jobs.push({kind:'feed',route:'animals',action:'feed-all',energy:p.energy,value:Math.max(0,production-p.coins),spend:p.coins,ids:p.hungry.map(a=>a.id),before:p.hungry.map(a=>({id:a.id,lastFedAt:a.lastFedAt})),meal:p.meal});
         }
       }
@@ -1059,7 +1066,9 @@
     }
     if(job.kind==='energy'){
       const shown=Number((el.textContent.match(/[\d,]+(?:\.\d+)?/g)||[]).at(-1)?.replaceAll(',',''));
-      const expected=R.quote(d).energy10;
+      const quote=R.quote(d);
+      if(!quote.rewardMultKnown){message='奖励发放比例未确认，暂不自动购买能量';return false}
+      const expected=quote.energy10;
       if(!(shown>0)||Math.abs(shown-expected)>1){message='能量报价尚未同步，等待下一次检查';return false}
       reserved=Math.ceil(shown*1.15);
       if(!flags.energy||config.energyBudget<=0||ledger.energySpent+reserved>config.energyBudget||d.farm.tokens<reserved){message='能量购买超过每日预算或余额不足';return false}
@@ -1123,11 +1132,11 @@
         const q=R.quote(d),protectedEnergy=['feed','collect','income'].includes(job.kind)?0:reserveFeed(d);
         if(f.today.energy<job.energy){
           const packs=Math.ceil((job.energy-f.today.energy)/10),fullCost=Math.ceil(q.energy10*1.15)*packs;
-          if(flags.energy&&job.value>fullCost&&ledger.energySpent+fullCost<=config.energyBudget){
+          if(flags.energy&&q.rewardMultKnown&&job.value>fullCost&&ledger.energySpent+fullCost<=config.energyBudget){
             const buy={kind:'energy',route:'energy',action:'energy',arg:'10',before:f.today.energy,bought:f.today.bought||0,energy:0,value:job.value};
             if(navigate(buy))submit(buy,d);else message='打开能量小包，检查价格和预算';return;
           }
-          waiting='能量不足：本项需 '+job.energy+'，等待补充';continue;
+          waiting=!q.rewardMultKnown&&flags.energy?'奖励发放比例未确认，暂不自动购买能量':'能量不足：本项需 '+job.energy+'，等待补充';continue;
         }
         if(job.energy&&job.kind!=='feed'&&job.kind!=='collect'&&!['craft-eggs','craft-milk'].includes(job.kind)&&f.today.energy<job.energy+protectedEnergy){waiting='为待喂动物保留能量，暂停其他农活';continue}
         if(!navigate(job)){message='打开'+({animals:'动物',fields:'田地',orchard:'果园',rwa:'矿油'}[job.route]||'游戏')+'面板';return}
@@ -1269,7 +1278,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     }
     const oilText=!oil?'未建油井':!R.built(oil,now)?'建设中 · '+duration(oil.buildUntil-now):oil.collectDay===cal.day?'今日已抽取 · '+duration(cal.nextMidnight-now)+'后重置':'今日可抽取';
     const goods=f.goods,inventory=goods?['gold','silver','oil'].map((k,i)=>['金','银','油'][i]+' '+(Number.isFinite(goods[k])?goods[k].toLocaleString('zh-CN',{maximumFractionDigits:2}):'—')).join(' · '):'资源库存：等待数据';
-    return {harvest,battle,carry:f.harvestCarry||0,carryCap:q.base*7,feedSpent:f.today.feedSpent||0,nftCapBonus:q.nftCapBonus,nftYieldBonus:q.nftYieldBonus,reset:cal.nextMidnight,sameDay,
+    return {harvest,battle,rewardMult:q.rewardMult,rewardMultKnown:q.rewardMultKnown,carry:f.harvestCarry||0,carryCap:q.base*7,feedSpent:f.today.feedSpent||0,nftCapBonus:q.nftCapBonus,nftYieldBonus:q.nftYieldBonus,reset:cal.nextMidnight,sameDay,
       village:{stored:villageStored,cap:villageCap,hourly:villageDaily/24,fullIn:Number.isFinite(villageStored)&&villageDaily>0?(villageCap-villageStored)/villageDaily*dayMs:null},
       mining,oilText,inventory,orders,budget,orderReset:W.orderReset({...d,now}),
       day:today.day};
@@ -1277,6 +1286,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
   const el=(tag,text)=>{const n=document.createElement(tag);if(text)n.textContent=text;return n};
   const root=el('section');root.id='farm-earnings-controls';root.setAttribute('aria-label','收益进度');
   const stamp=el('p','打开此页后读取收益数据');stamp.className='fh-earnings-stamp';root.append(stamp);
+  const payoutLine=el('p','奖励发放比例：等待服务器数据');payoutLine.className='fh-earnings-note';root.append(payoutLine);
   const today=el('section'),todayHead=el('div'),todayTitle=el('h3','今日额度'),overall=el('span'),todayBody=el('div'),resetLine=el('p');
   today.className='fh-earnings-group';todayHead.className='fh-earnings-heading';overall.className='fh-earnings-overall';resetLine.className='fh-earnings-note fh-earnings-reset';todayHead.append(todayTitle,overall);today.append(todayHead,todayBody,resetLine);root.append(today);
   function disclosure(label){const box=el('details'),summary=el('summary',label),body=el('div');box.className='fh-earnings-details';box.append(summary,body);return {box,body}}
@@ -1302,6 +1312,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     const goal=scene?.run?.active&&!scene.tut?window.__farmCombatGoal?.status?.():null;
     const live=Number.isFinite(goal?.cap)&&Number.isFinite(goal?.dailyBeforeRun)&&Number.isFinite(goal?.earned)?{cap:goal.cap,earned:goal.dailyBeforeRun+goal.earned}:null;
     let view=null;try{if(data)view=model(data,now,budget&&new Date(now-Math.max(0,performance.now()-budgetAt)).toISOString().slice(0,10)===new Date(now).toISOString().slice(0,10)?budget:null,live)}catch{}
+    payoutLine.textContent=!view?'奖励发放比例：等待服务器数据':view.rewardMultKnown?'当前奖励发放比例 '+(view.rewardMult*100).toLocaleString('zh-CN',{maximumFractionDigits:2})+'% · 已计入收益与基础额度':'发放比例未返回 · 暂按100%估算，暂停自动购买能量';
     const ageText=Number.isFinite(age)?age<60000?'刚刚更新':Math.floor(age/60000)+'分钟前更新':'等待数据';
     const status=window.__farmVerification?.isBlocked()?'等待人工验证，暂停读取':document.hidden?'页面在后台，暂停读取':error?'读取失败，保留上次数据':view&&!view.sameDay?'跨日了，等待重新读取':age>=60000&&data?'数据已过期':'额度自动更新';
     stamp.textContent=status==='额度自动更新'?ageText:status+' · '+ageText;
@@ -1319,7 +1330,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
       if(view.nftYieldBonus>1)textLine(quota.body,'NFT质押产出加成','+'+Math.round((view.nftYieldBonus-1)*100)+'%');
       if(view.feedSpent>0)textLine(quota.body,'饲料增加额度','+'+number(view.feedSpent));
     }
-    const shared=el('p','收获额度由作物、果园、动物及钓鱼共用。计价变化会调整当前上限，已得超过上限不表示仍可继续领取。');shared.className='fh-earnings-note';quota.body.append(shared);
+    const shared=el('p','收获额度由作物、果园、动物及钓鱼共用。奖励发放比例不降低购买价格；计价或比例变化会调整当前上限，已得超过上限不表示仍可继续领取。');shared.className='fh-earnings-note';quota.body.append(shared);
     const v=view?.village;
     const villageRow=summaryRow(stockBody,'村庄收入',v?number(v.stored):'—',v?v.fullIn===0?'满仓待领':'持续累积':'读取中');if(villageRow&&v?.fullIn===0)villageRow.dataset.urgent='true';
     const carts=view?.mining.carts;
@@ -1962,5 +1973,5 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 1.20.2 已开启；请先完成面板内的游戏版本检查';
+  return '助手 1.20.3 已开启；请先完成面板内的游戏版本检查';
 })();
