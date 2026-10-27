@@ -3,12 +3,13 @@
   window.__farmVersionGuard?.remove();
   const storageKey='farm-helper.game-version.v1',intervalMs=300000,pageId=String(performance.timeOrigin);
   let record={approved:null,pending:null},storageError=false,removed=false,busy=false,flight=null,controller=null,lastTry=0,ui=null,generation=0;
-  let state={blocked:true,phase:'checking',message:'正在检查游戏版本…',detail:'核对入口与关联代码，完成前暂停全部自动功能',files:0,checkedAt:0,refreshRequired:false,cacheOnly:false};
+  let state={blocked:true,phase:'checking',message:'正在检查游戏版本…',detail:'核对入口与关联代码，完成前暂停全部自动功能',files:0,checkedAt:0,refreshRequired:false,cacheOnly:false,textOnly:false};
   let candidate=null;
   function read(){
     try{
       const value=JSON.parse(localStorage.getItem(storageKey)||'null');
       const a=value?.approved;
+      if(a?.reviewedLogicals!==undefined&&(!Array.isArray(a.reviewedLogicals)||a.reviewedLogicals.length>32||a.reviewedLogicals.some(x=>! /^[a-f0-9]{64}$/.test(x))))throw Error('兼容摘要记录异常');
       if(a&&(a.cacheFilter!==undefined&&a.cacheFilter!==1||a.logical!==undefined&&!/^[a-f0-9]{64}$/.test(a.logical)||['cacheRoots','cacheFiles'].some(k=>a[k]!==undefined&&(!Array.isArray(a[k])||a[k].length>512||a[k].some(u=>!asset(u))))))throw Error('缓存版本记录异常');
       if(value&&(value.schema!==1||value.approved&&(!Array.isArray(value.approved.files)||!value.approved.files.length||!Array.isArray(value.approved.roots)||!value.approved.roots.length||! /^[a-f0-9]{64}$/.test(value.approved.fingerprint)||value.approved.files.some(f=>!asset(f.url)||! /^[a-f0-9]{64}$/.test(f.hash)))||value.pending&&(!['update','error'].includes(value.pending.kind)||value.pending.kind==='update'&&typeof value.pending.pageId!=='string')))throw Error('版本记录格式异常');
       record=value||{schema:1,approved:null,pending:null};storageError=false;
@@ -102,34 +103,37 @@
   async function check(confirmFingerprint=null){
     if(removed)return false;if(busy)return flight;
     busy=true;lastTry=Date.now();candidate=null;const revision=generation;
-    update({phase:'checking',message:'正在检查游戏版本…',detail:'读取入口与关联代码',files:0,cacheOnly:false});
+    update({phase:'checking',message:'正在检查游戏版本…',detail:'读取入口与关联代码',files:0,cacheOnly:false,textOnly:false});
     controller=new AbortController();const timeout=setTimeout(()=>controller?.abort(),90000);
     flight=(async()=>{
       try{
         read();const result=await scan(controller.signal);if(removed||revision!==generation)return false;
         candidate=result;const rawChanged=record.approved?.fingerprint!==result.fingerprint;
-        const cacheOnly=!!record.approved&&rawChanged&&record.approved.cacheFilter===1&&record.approved.logical===result.logical;
-        const changed=rawChanged&&!cacheOnly;
+        const cacheOnly=!!record.approved&&rawChanged&&record.approved.cacheFilter===1&&[record.approved.logical,...(record.approved.reviewedLogicals||[])].includes(result.logical);
+        const textOnly=!!record.approved&&rawChanged&&!cacheOnly&&!!window.__farmCompatibility?.equivalent(record.approved,result),safeOnly=cacheOnly||textOnly;
+        const changed=rawChanged&&!safeOnly;
         if(record.approved&&changed)markChanged();
-        const refreshRequired=(cacheOnly? !result.equivalentPage:result.stale)||record.pending?.kind==='update'&&record.pending.pageId===pageId;
+        const trustedReviewed=!!record.approved?.reviewedLogicals?.includes(result.logical);
+        const refreshRequired=(safeOnly||trustedReviewed?!result.equivalentPage:result.stale)||record.pending?.kind==='update'&&record.pending.pageId===pageId&&!safeOnly;
         if(confirmFingerprint){
           if(refreshRequired)throw Error('请先刷新游戏，再确认当前加载的版本');
           if(confirmFingerprint!==result.fingerprint){update({blocked:true,phase:'review',refreshRequired:false,message:'代码再次变化，请重新检查后确认',detail:'本次没有保存确认'});return false}
           save({schema:1,approved:{fingerprint:result.fingerprint,roots:result.roots,files:result.files,cacheFilter:1,logical:result.logical,at:Date.now()},pending:null});
-        }else if(!record.approved||changed||record.pending?.kind==='update'||refreshRequired){
+        }else if(!record.approved||changed||record.pending?.kind==='update'&&!safeOnly||refreshRequired){
           const old=new Map((record.approved?.files||[]).map(f=>[f.url,f.hash]));
           const count=result.files.filter(f=>old.get(f.url)!==f.hash).length;
-          update({blocked:true,phase:'review',refreshRequired,message:record.approved?'游戏代码有更新，等待确认':'首次启用，请确认当前游戏版本',detail:refreshRequired?'请结束当前操作并刷新游戏，再检查与确认':record.approved?'检测到 '+count+' 个新增或变化文件；确认兼容后可解除暂停':'已检查 '+result.files.length+' 个代码文件，确认后建立版本基准',checkedAt:Date.now()});return false;
-        }else if(cacheOnly){
+          update({blocked:true,phase:'review',refreshRequired,message:record.approved?'游戏代码有更新，等待确认':'首次启用，请确认当前游戏版本',detail:refreshRequired?'请结束当前操作并刷新游戏，再检查与确认':record.approved?'检测到 '+count+' 个新增或变化文件，尚未归类；核对后确认兼容':'已检查 '+result.files.length+' 个代码文件，确认后建立版本基准',checkedAt:Date.now()});return false;
+        }else if(safeOnly){
           const a=record.approved;
           const cacheRoots=[...new Set([...(a.cacheRoots||[]),...result.roots])].slice(-64);
           const cacheFiles=[...new Set([...(a.cacheFiles||[]),...result.files.map(f=>f.url)])].slice(-512);
-          if(record.pending||JSON.stringify(cacheRoots)!==JSON.stringify(a.cacheRoots)||JSON.stringify(cacheFiles)!==JSON.stringify(a.cacheFiles))save({...record,approved:{...a,cacheRoots,cacheFiles},pending:null});
+          const reviewedLogicals=[...new Set([...(a.reviewedLogicals||[]),...(textOnly?[result.logical]:[])])].slice(-32);
+          if(record.pending||JSON.stringify(cacheRoots)!==JSON.stringify(a.cacheRoots)||JSON.stringify(cacheFiles)!==JSON.stringify(a.cacheFiles)||JSON.stringify(reviewedLogicals)!==JSON.stringify(a.reviewedLogicals))save({...record,approved:{...a,cacheRoots,cacheFiles,reviewedLogicals},pending:null});
         }else if(record.pending||record.approved.cacheFilter!==1||record.approved.logical!==result.logical){
           // Old baselines gain the new digest only after their original raw hashes match exactly.
           save({...record,approved:{...record.approved,cacheFilter:1,logical:result.logical},pending:null});
         }
-        update({blocked:false,phase:'ready',refreshRequired:false,cacheOnly,message:'版本检查通过',detail:cacheOnly?'仅资源缓存版本变化，实际代码一致，已自动忽略':'关键前端代码与已确认版本一致',checkedAt:Date.now()});return true;
+        update({blocked:false,phase:'ready',refreshRequired:false,cacheOnly,textOnly,message:'版本检查通过',detail:textOnly?'已核实为提现说明文案及缓存变化，自动放行':cacheOnly?'仅资源缓存版本变化，实际代码一致，已自动忽略':'关键前端代码与已确认版本一致',checkedAt:Date.now()});return true;
       }catch(error){
         if(!removed&&revision===generation){
           if(!storageError&&record.pending?.kind!=='update')try{save({...record,pending:{kind:'error',at:Date.now()}})}catch{}
@@ -149,7 +153,8 @@
     const retry=make('button','重新检测'),confirm=make('button','确认兼容，解除暂停');
     for(const b of [retry,confirm]){b.type='button';b.style.cssText='font:inherit;padding:5px 8px;border:1px solid #708c69;border-radius:4px;background:#c7dfb8;color:#213721;cursor:pointer'}
     retry.onclick=()=>void check();confirm.onclick=()=>void approve();actions.append(retry,confirm);mask.append(heading,detail,actions);panel.insertBefore(mask,body);
-    ui={badge,mask,heading,detail,retry,confirm,body,mini,isCollapsed};paint();
+    const notice=make('details'),summary=make('summary'),list=make('p'),inspect=make('button','重新检查相关功能');notice.id='farm-compatibility-notice';notice.style.cssText='margin:0 0 10px;padding:8px;background:#302c1c;border:1px solid #76633b;border-radius:5px;font-size:11px;line-height:1.5;color:#e8d8af';list.style.cssText='margin:6px 0;white-space:pre-line';inspect.type='button';inspect.onclick=()=>void window.__farmCompatibility?.recheck();inspect.style.cssText=retry.style.cssText;notice.append(summary,list,inspect);panel.insertBefore(notice,body);
+    ui={badge,mask,heading,detail,retry,confirm,body,mini,isCollapsed,notice,summary,list};paint();
   }
   function paint(){
     if(!ui||removed)return;
@@ -157,15 +162,21 @@
     body.inert=state.blocked;body.hidden=collapsed||state.blocked;mask.hidden=collapsed||!state.blocked;
     heading.textContent=state.message;detail.textContent=state.detail;
     retry.disabled=busy;confirm.disabled=busy||state.refreshRequired||state.phase!=='review';confirm.hidden=state.phase!=='review'||state.refreshRequired;
-    badge.textContent=state.phase==='checking'?'检测中':state.blocked?'已暂停':state.cacheOnly?'缓存更新已忽略':'版本正常';badge.title=state.blocked?state.message:state.detail;
+    const compatibility=window.__farmCompatibility?.status(),faults=compatibility?.issues||[];
+    ui.notice.hidden=state.blocked||collapsed||compatibility?.storageOK!==false&&!faults.length;
+    const stopped=compatibility?.storageOK===false||faults.some(x=>x.scope==='all');
+    ui.summary.textContent=compatibility?.storageOK===false?'兼容记录不可用，自动操作暂停':stopped?'自动操作暂停，账号状态待确认':[...new Set(faults.map(x=>x.label))].join('、')+'暂停 · 其他兼容功能可继续';
+    ui.list.textContent=faults.map(x=>x.label+'：'+x.reason).join('\n');
+    badge.textContent=state.phase==='checking'?'检测中':state.blocked?'已暂停':stopped?'自动暂停':faults.length?'部分暂停':state.textOnly?'文案更新已核对':state.cacheOnly?'缓存更新已忽略':'版本正常';badge.title=state.blocked?state.message:state.detail;
     if(state.blocked&&collapsed){mini.textContent=state.message;mini.title=state.detail}
     if(state.blocked&&body.contains(document.activeElement))retry.focus();
   }
-  function unmount(){if(!ui)return;ui.body.inert=false;ui.mask.remove();ui.badge.remove();ui=null}
+  function unmount(){if(!ui)return;ui.body.inert=false;ui.mask.remove();ui.badge.remove();ui.notice.remove();ui=null}
   function foreground(){if(!document.hidden&&Date.now()-lastTry>=30000)void check()}
   function sync(e){if(e.key!==storageKey)return;generation++;controller?.abort();update({blocked:true,message:'版本确认记录变化，重新检查'});if(flight&&busy)void flight.finally(()=>{if(!removed)void check()});else void check()}
+  const unsubscribe=window.__farmCompatibility?.subscribe(()=>{if(window.__farmCompatibility.isBlocked('battle'))window.__farmBattleInput?.release();paint()});
   const timer=setInterval(()=>{if(!document.hidden&&Date.now()-lastTry>=intervalMs)void check()},15000);
   document.addEventListener('visibilitychange',foreground);window.addEventListener('storage',sync);
-  window.__farmVersionGuard={isBlocked:()=>state.blocked,status:()=>({...state,busy}),check,approve,mount,paint,remove:()=>{removed=true;controller?.abort();clearInterval(timer);document.removeEventListener('visibilitychange',foreground);window.removeEventListener('storage',sync);unmount();delete window.__farmVersionGuard}};
+  window.__farmVersionGuard={isBlocked:(scope='all')=>state.blocked||!!window.__farmCompatibility?.isBlocked(scope),reason:(scope='all')=>state.blocked?state.message:(window.__farmCompatibility?.status().issues.find(x=>x.scope===scope||x.scope==='all'||x.scope==='account'&&['farm','earnings','battle'].includes(scope))?.reason||'相关功能兼容性待核对'),status:()=>({...state,busy,compatibility:window.__farmCompatibility?.status()}),check,approve,mount,paint,remove:()=>{removed=true;unsubscribe?.();controller?.abort();clearInterval(timer);document.removeEventListener('visibilitychange',foreground);window.removeEventListener('storage',sync);unmount();delete window.__farmVersionGuard}};
   void check();
 })();

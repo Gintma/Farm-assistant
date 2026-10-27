@@ -22,7 +22,7 @@
     setQuota(cap,total,active?'游戏战斗面板':'游戏大厅面板',active?s.run:null);
   }
   function blocked(){
-    if(window.__farmManualCapture||window.__farmVersionGuard?.isBlocked()||window.__farmVerification?.isBlocked?.())return true;
+    if(window.__farmManualCapture||window.__farmVersionGuard?.isBlocked('battle')||window.__farmVerification?.isBlocked?.())return true;
     if(document.hidden)return true;
     if(document.activeElement?.matches?.('input,textarea,select,[contenteditable="true"]'))return true;
     if(window.__farmCombat?.status?.().manualPaused)return true;

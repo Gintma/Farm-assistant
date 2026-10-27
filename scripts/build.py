@@ -5,9 +5,9 @@ import zipfile
 root = Path(__file__).resolve().parents[1]
 bot = root / 'src'
 ext = root / 'extension'
-version = '1.20.7'
+version = '1.21.0'
 modules = [
-    'battle-planner.js', 'version-guard.js', 'activity-store.js',
+    'battle-planner.js', 'update-catalog.js', 'compatibility.js', 'version-guard.js', 'activity-store.js',
     'verification-guard.js', 'farm-rules.js', 'workshop-rules.js',
     'market-rules.js', 'farm-automation.js', 'earnings-progress.js', 'combat-controller.js',
     'combat-input.js', 'combat-goal.js', 'combat-perks.js', 'combat-return.js',
@@ -31,7 +31,7 @@ head = '''/* Farming Season helper __HELPER_VERSION__: original combat mechanics
   window.__farmDodge?.restore();window.__farmSeek?.restore();window.__farmInvincible?.restore();
   window.__farmHandoff=handoff;
   function cleanup(){
-    window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();
+    window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();window.__farmCompatibility?.remove();delete window.__farmUpdateCatalog;
   }
   window.__farmLauncher={status:()=>({installed:true,version:'__HELPER_VERSION__',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{

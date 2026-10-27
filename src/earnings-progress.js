@@ -38,72 +38,48 @@
       day:today.day};
   }
   const el=(tag,text)=>{const n=document.createElement(tag);if(text)n.textContent=text;return n};
-  const root=el('section');root.id='farm-earnings-controls';root.setAttribute('aria-label','收益进度');
-  const stamp=el('p','打开此页后读取收益数据');stamp.className='fh-earnings-stamp';root.append(stamp);
-  const payoutLine=el('p','奖励发放比例：等待服务器数据');payoutLine.className='fh-earnings-note';root.append(payoutLine);
-  const creditLine=el('p');creditLine.className='fh-earnings-note';creditLine.hidden=true;root.append(creditLine);
-  const today=el('section'),todayHead=el('div'),todayTitle=el('h3','今日额度'),overall=el('span'),todayBody=el('div'),resetLine=el('p');
-  today.className='fh-earnings-group';todayHead.className='fh-earnings-heading';overall.className='fh-earnings-overall';resetLine.className='fh-earnings-note fh-earnings-reset';todayHead.append(todayTitle,overall);today.append(todayHead,todayBody,resetLine);root.append(today);
-  function disclosure(label){const box=el('details'),summary=el('summary',label),body=el('div');box.className='fh-earnings-details';box.append(summary,body);return {box,body}}
-  const quota=disclosure('查看额度明细');root.append(quota.box);
-  const stockSection=el('section'),stockHeading=el('h3','待收库存'),stockBody=el('div');stockSection.className='fh-earnings-group fh-earnings-stock';stockSection.append(stockHeading,stockBody);root.append(stockSection);
-  const resources=disclosure('资源库存与生产时间');root.append(resources.box);
-  const budgetNotice=el('p');budgetNotice.className='fh-earnings-warning';budgetNotice.hidden=true;root.append(budgetNotice);
+  const root=el('section');root.id='farm-earnings-controls';root.setAttribute('aria-label','今日完成情况');
+  const stamp=el('p');stamp.className='fh-earnings-stamp';stamp.setAttribute('role','status');stamp.hidden=true;root.append(stamp);
+  const title=el('h3','今日完成情况');title.className='fh-completion-title';root.append(title);
+  const todayBody=el('div');todayBody.className='fh-completion-list';root.append(todayBody);
+  const reason=el('p');reason.className='fh-earnings-warning';reason.hidden=true;root.append(reason);
+  const resetLine=el('p');resetLine.className='fh-earnings-note fh-earnings-reset';root.append(resetLine);
+  const details=el('details'),summary=el('summary','额度明细'),detailBody=el('div');details.className='fh-earnings-details';details.append(summary,detailBody);root.append(details);
   let shown=false,removed=false,busy=false,data=null,receivedAt=-Infinity,lastTry=-Infinity,budget=null,budgetAt=-Infinity,error='',budgetError='',controller=null,lastView='';
-  function textLine(parent,label,value,sub){const row=el('div');row.className='fh-earnings-row';const line=el('div');line.className='fh-earnings-line';line.append(el('span',label),el('span',value));row.append(line);if(sub){const n=el('p',sub);n.className='fh-earnings-note';row.append(n)}parent.append(row)}
-  function summaryRow(parent,label,amount,state,full=false){const row=el('div');row.className='fh-earnings-summary';row.dataset.full=String(full);row.append(el('span',label),el('span',amount),el('span',state));parent.append(row);return row}
-  function progress(parent,label,value){
-    const full=!!value&&value.cap>0&&value.left===0;
-    summaryRow(parent,label,value?number(value.earned):'—',!value?'读取中':full?'✓ 已满':'还可得 '+number(value.left),full);
-    if(!value||full)return;
-    const bar=el('div');bar.className='fh-earnings-bar';bar.setAttribute('role','progressbar');bar.setAttribute('aria-label',label+'今日额度');bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');
-    bar.setAttribute('aria-valuenow',String(Math.floor(value.pct)));bar.setAttribute('aria-valuetext',number(value.earned)+' / '+number(value.cap)+'，还可得 '+number(value.left));
-    const fill=el('i');fill.style.width=value.pct+'%';bar.append(fill);parent.append(bar);
+  function row(parent,label,value,state=''){
+    const line=el('div');line.className='fh-completion-row';line.dataset.state=state;line.append(el('span',label),el('span',value));parent.append(line);return line;
   }
   function render(){
     if(!shown||removed)return;
     const age=performance.now()-receivedAt,now=data?data.now+Math.max(0,age):Date.now();
-    const scene=(window.__farmGame||window.temp1)?.scene?.scenes.find(s=>s.sys.settings.key==='battle');
+    const scene=(window.__farmGame||window.temp1)?.scene?.scenes?.find(s=>s.sys?.settings?.key==='battle');
     const goal=scene?.run?.active&&!scene.tut?window.__farmCombatGoal?.status?.():null;
     const live=Number.isFinite(goal?.cap)&&Number.isFinite(goal?.dailyBeforeRun)&&Number.isFinite(goal?.earned)?{cap:goal.cap,earned:goal.dailyBeforeRun+goal.earned}:null;
-    let view=null;try{if(data)view=model(data,now,budget&&new Date(now-Math.max(0,performance.now()-budgetAt)).toISOString().slice(0,10)===new Date(now).toISOString().slice(0,10)?budget:null,live)}catch{}
-    payoutLine.textContent=!view?'奖励发放比例：等待服务器数据':view.rewardMultKnown?'当前奖励发放比例 '+(view.rewardMult*100).toLocaleString('zh-CN',{maximumFractionDigits:2})+'% · 已计入收益与基础额度':'发放比例未返回 · 暂按100%估算，暂停自动购买能量';
-    creditLine.hidden=!view?.fullRate.visible;
-    if(view?.fullRate.visible){const credit=view.fullRate;creditLine.textContent='补足额度 '+(credit.creditUsd===null?'等待读取':'$'+credit.creditUsd.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}))+' · 今日已补 '+(credit.todayBonus===null?'等待更新':number(credit.todayBonus)+' 金币')+(!credit.enabled?' · 当前未启用':view.rewardMultKnown&&view.rewardMult>=1?' · 当前100%，暂不消耗额度':'');}
-    const ageText=Number.isFinite(age)?age<60000?'刚刚更新':Math.floor(age/60000)+'分钟前更新':'等待数据';
-    const status=window.__farmVerification?.isBlocked()?'等待人工验证，暂停读取':document.hidden?'页面在后台，暂停读取':error?'读取失败，保留上次数据':view&&!view.sameDay?'跨日了，等待重新读取':age>=60000&&data?'数据已过期':'额度自动更新';
-    stamp.textContent=status==='额度自动更新'?ageText:status+' · '+ageText;
-    const key=JSON.stringify({view,budgetError});if(key===lastView)return;lastView=key;
-    todayBody.replaceChildren();quota.body.replaceChildren();stockBody.replaceChildren();resources.body.replaceChildren();
-    const metrics=[['收获',view?.harvest],['战斗',view?.battle],['作坊订单',view?.orders]];
-    const complete=metrics.every(([,v])=>v&&v.cap>0&&v.left===0);
-    overall.textContent=complete?'均已满额':metrics.some(([,v])=>!v)?'等待读取':'尚有可获额度';overall.dataset.full=String(complete);
-    for(const [label,value]of metrics){progress(todayBody,label,value);textLine(quota.body,label,value?number(value.earned)+' / '+number(value.cap):'等待数据')}
-    const periods=el('p','收获、战斗按农场当地午夜重置；订单按 UTC 00:00（北京时间08:00）刷新。');periods.className='fh-earnings-note';quota.body.append(periods);
-    resetLine.textContent=view?'收获/战斗 '+duration(view.reset-now)+'后重置\n作坊订单 '+duration(view.orderReset-now)+'后重置':'等待农场日期';
-    if(view){
-      textLine(quota.body,'结转库存',number(view.carry)+' / '+number(view.carryCap));
-      if(view.nftCapBonus>1)textLine(quota.body,'NFT质押收获额度','+'+Math.round((view.nftCapBonus-1)*100)+'%');
-      if(view.nftYieldBonus>1)textLine(quota.body,'NFT质押产出加成','+'+Math.round((view.nftYieldBonus-1)*100)+'%');
-      if(view.feedSpent>0)textLine(quota.body,'饲料增加额度','+'+number(view.feedSpent));
-      if(view.fullRate.visible)textLine(quota.body,'奖励补足','单独显示到账补足，不重复计入基础额度');
-      if(view.reinvestDiscount)textLine(quota.body,'适用建设及升级折扣',Math.round(view.reinvestDiscount*100)+'%');
-      if(view.recoveryMode)textLine(quota.body,'消费恢复模式','发放比例低于50%，普通消费暂停销毁');
+    let view=null;try{if(data)view=model(data,now,budget&&performance.now()-budgetAt<60000&&new Date(now-Math.max(0,performance.now()-budgetAt)).toISOString().slice(0,10)===new Date(now).toISOString().slice(0,10)?budget:null,live)}catch{}
+    const blocked=window.__farmVersionGuard?.isBlocked('earnings');
+    const valid=!!view&&view.sameDay&&age<60000&&!error&&!blocked;
+    const status=blocked?'兼容性待检查':window.__farmVerification?.isBlocked()?'等待人工验证':error?'读取失败，显示上次数据':view&&!view.sameDay?'跨日了，等待读取':data&&age>=60000?'数据已过期，等待读取':!view?'正在读取完成情况':'';
+    stamp.hidden=!status;stamp.textContent=status;
+    const key=JSON.stringify({view,valid,status,budgetError});if(key===lastView)return;lastView=key;
+    todayBody.replaceChildren();detailBody.replaceChildren();
+    for(const [label,value]of [['收获',view?.harvest],['战斗',view?.battle]]){
+      const full=valid&&!!value&&value.left===0;
+      row(todayBody,label,!valid||!value?'等待更新':full?'已满额':'尚未满额',full?'done':'waiting');
+      row(detailBody,label,value?number(value.earned)+' / '+number(value.cap):'等待数据');
     }
-    const shared=el('p','收获额度由作物、果园、动物及钓鱼共用。奖励发放比例不降低购买价格；计价或比例变化会调整当前上限，已得超过上限不表示仍可继续领取。');shared.className='fh-earnings-note';quota.body.append(shared);
-    const v=view?.village;
-    const villageRow=summaryRow(stockBody,'村庄收入',v?number(v.stored):'—',v?v.fullIn===0?'满仓待领':'持续累积':'读取中');if(villageRow&&v?.fullIn===0)villageRow.dataset.urgent='true';
-    const carts=view?.mining.carts;
-    const mineRow=summaryRow(stockBody,'矿场',Number.isFinite(carts)?carts+'/2车':'—',Number.isFinite(carts)?carts===2?'已满待收':carts===1?'等两车收取':'采集中':view?.mining.text||'读取中');if(mineRow&&carts===2)mineRow.dataset.urgent='true';
-    summaryRow(stockBody,'油井','',view?.oilText.split(' · ')[0]||'读取中');
-    textLine(resources.body,'村庄仓库',v?number(v.stored)+' / '+number(v.cap):'等待数据',v?'约 +'+number(v.hourly)+'/小时 · '+(v.fullIn===0?'已满仓，停止累积':duration(v.fullIn)+'后满仓'):null);
-    textLine(resources.body,'矿场',view?.mining.text||'等待数据');textLine(resources.body,'油井',view?.oilText||'等待数据');
-    const inventory=el('p',view?view.inventory+'（矿油额度独立）':'等待资源数据');inventory.className='fh-earnings-note';resources.body.append(inventory);
-    const globalBudget=view?.budget;
-    textLine(quota.body,'全服每日订单预算',globalBudget?.left===0?'已耗尽，仅星星':Number.isFinite(globalBudget?.left)?'剩余 '+number(globalBudget.left):'等待数据',budgetError||null);
-    budgetNotice.hidden=globalBudget?.left!==0&&!budgetError;
-    budgetNotice.textContent=globalBudget?.left===0?'全服订单金币预算已耗尽；订单仍可获得星星。':budgetError;
-
+    const count=data&&data.farm.orders?.day===W.orderDay({...data,now})&&Array.isArray(data.farm.orders.done)?new Set(data.farm.orders.done.filter(n=>Number.isInteger(n)&&n>=0&&n<3)).size:0;
+    const allowance=view?.orders?.left,globalLeft=view?.budget?.left;
+    const knownBudget=Number.isFinite(globalLeft)&&!budgetError;
+    const stars=valid&&count<3&&(allowance===0||knownBudget&&globalLeft===0);
+    const done=valid&&count===3;
+    const orderState=!valid?'等待更新':data.farm.level<2?'市政厅2级开放':!view.orders?'等待读取':done?'已完成 3/3':stars?'已完成 '+count+'/3 · 仅星星':!knownBudget?'已完成 '+count+'/3 · 奖励待确认':'已完成 '+count+'/3';
+    row(todayBody,'作坊订单',orderState,done?'done':stars?'limited':'waiting');
+    reason.hidden=!(stars||budgetError);
+    reason.textContent=stars?(allowance===0?'账号今日订单金币额度已用完。':'全服订单金币预算已耗尽。'):budgetError;
+    resetLine.textContent=valid?'收获 / 战斗：'+duration(view.reset-now)+'后重置\n作坊订单：'+duration(view.orderReset-now)+'后重置':'刷新后显示重置时间';
+    row(detailBody,'订单金币',view?.orders?number(view.orders.earned)+' / '+number(view.orders.cap):'等待数据');
+    if(view?.orders){row(detailBody,'账号剩余额度',number(view.orders.left));row(detailBody,'当前可获上限',knownBudget?number(Math.min(view.orders.left,globalLeft)):'等待预算确认')}
+    const note=el('p','订单当前可获上限同时受账号额度和全服预算限制；实际奖励以交付时为准。');note.className='fh-earnings-note';detailBody.append(note);
   }
   function syncCached(){
     const cached=window.__farmAutomation?.readSnapshot?.();
@@ -112,7 +88,7 @@
   }
   async function refresh(){
     if(!shown||removed)return;syncCached();render();
-    if(window.__farmVersionGuard?.isBlocked()||busy||document.hidden||window.__farmVerification?.isBlocked())return;
+    if(window.__farmVersionGuard?.isBlocked('earnings')||busy||document.hidden||window.__farmVerification?.isBlocked())return;
     const t=performance.now();if(t-lastTry<30000)return;
     const farmDue=!data||t-receivedAt>=30000,budgetDue=!budget||t-budgetAt>=30000;
     if(!farmDue&&!budgetDue)return;
@@ -126,7 +102,7 @@
         if(data&&data.owner!==d.owner){budget=null;budgetAt=-Infinity}
         data=d;receivedAt=performance.now();error='';
       }
-      if(budgetDue){
+      if(budgetDue&&data.farm.level>=2&&!window.__farmVersionGuard?.isBlocked('workshop')){
         try{
           const result=await W.readBudget(data.owner,data.now+Math.max(0,performance.now()-receivedAt),controller.signal);
           if(removed)return;budget=result.budget;budgetAt=performance.now()-result.ageMs;budgetError='';

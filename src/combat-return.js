@@ -35,7 +35,7 @@
     if(clicked)return;
     const root=document.getElementById('battle-ui');
     if(!visible(root)){idleSince=null;return}
-    if(window.__farmManualCapture||window.__farmVersionGuard?.isBlocked()||window.__farmVerification?.isBlocked?.()||document.hidden){resetWait('等待页面可见、版本检查和验证完成');return}
+    if(window.__farmManualCapture||window.__farmVersionGuard?.isBlocked('battle')||window.__farmVerification?.isBlocked?.()||document.hidden){resetWait('等待页面可见、版本检查和验证完成');return}
     if(keys.size||pointer||document.activeElement?.matches?.('input,textarea,select,[contenteditable="true"]')||[...document.querySelectorAll('#modal,[role="dialog"],.cf-turnstile,iframe[src*="challenges.cloudflare.com"]')].some(visible)){resetWait('手动操作或弹窗中，稍后重新计时');return}
     const summary=root.querySelector('.bui-screen .bstats');
     const home=root.querySelector('.bui-screen button[data-action="go-home"]');

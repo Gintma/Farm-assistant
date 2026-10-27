@@ -11,16 +11,16 @@
   if(!title||rows.length!==1||!goal)return;
   const style=document.createElement('style');style.id='farm-helper-layout-style';
   style.textContent=`
-#farm-compact-controls{position:fixed;right:12px;top:168px;width:268px;max-width:calc(100vw - 24px);max-height:calc(100vh - 16px);overflow:auto;box-sizing:border-box;padding:12px;background:#16271d;color:#e6eee6;border:1px solid #42604b;border-radius:8px;font:12px/1.5 'PingFang SC','Microsoft YaHei',sans-serif;box-shadow:0 4px 16px #10201440;z-index:2147483647}
+#farm-compact-controls{position:fixed;right:12px;top:168px;width:268px;max-width:calc(100vw - 24px);max-height:calc(100vh - 16px);overflow:hidden;display:flex;flex-direction:column;box-sizing:border-box;padding:12px;background:#16271d;color:#e6eee6;border:1px solid #42604b;border-radius:8px;font:12px/1.5 'PingFang SC','Microsoft YaHei',sans-serif;box-shadow:0 4px 16px #10201440;z-index:2147483647}
 #farm-compact-controls [hidden]{display:none!important}
-#farm-compact-controls .fh-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;cursor:grab;touch-action:none;user-select:none}
+#farm-compact-controls .fh-head{flex:none;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;cursor:grab;touch-action:none;user-select:none}
 #farm-compact-controls .fh-head.fh-dragging{cursor:grabbing}
 #farm-compact-controls .fh-head:focus-visible{outline:2px solid #e7d29d;outline-offset:3px}
 #farm-compact-controls .fh-head>div{margin:0!important;font-size:12px!important;font-weight:650}
 #farm-compact-controls button{font-family:inherit;cursor:pointer}
 #farm-compact-controls .fh-version{margin-left:7px;font-size:10px;font-weight:400;color:#a6bcae;white-space:nowrap}
 #farm-compact-controls .fh-fold{padding:2px 0;border:0;background:none;color:#abc2af;font-size:11px}
-#farm-compact-controls .fh-tabs{display:flex;gap:3px;padding-bottom:8px;margin-bottom:10px;border-bottom:1px solid #42604b}
+#farm-compact-controls .fh-tabs{flex:none;display:flex;gap:3px;padding-bottom:8px;margin-bottom:10px;border-bottom:1px solid #42604b}
 #farm-compact-controls .fh-tab{flex:1;padding:5px 4px;border:0;border-radius:4px;background:none;color:#abc2af;font-size:12px}
 #farm-compact-controls .fh-tab[aria-selected=true]{background:#c7dfb8;color:#213721;font-weight:600}
 #farm-compact-controls .fh-option{display:flex!important;align-items:center;justify-content:flex-start!important;gap:7px!important;margin:10px 0 0!important;font-size:12px!important}
@@ -63,30 +63,22 @@
 #farm-compact-controls .fh-footer{margin-top:9px!important;font-size:10px!important;color:#abc2af!important}
 #farm-compact-controls :is(button,input,select):focus-visible{outline:2px solid #e7d29d;outline-offset:2px}
 #farm-compact-controls #farm-earnings-controls{font-size:11px;font-variant-numeric:tabular-nums}
-#farm-compact-controls .fh-earnings-stamp{font-size:10px;color:#91ad99;margin:0 0 12px}
-#farm-compact-controls .fh-earnings-group{margin:0}
-#farm-compact-controls .fh-earnings-group h3{font-size:11px;font-weight:600;margin:0;color:#dbe7d7}
-#farm-compact-controls .fh-earnings-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
-#farm-compact-controls .fh-earnings-overall{font-size:10px;color:#abc2af}
-#farm-compact-controls .fh-earnings-overall[data-full=true]{color:#b9d4a9}
-#farm-compact-controls .fh-earnings-summary{display:grid;grid-template-columns:60px minmax(0,1fr) minmax(0,96px);align-items:baseline;gap:4px;padding:6px 0;color:#dbe7dc}
-#farm-compact-controls .fh-earnings-summary>span:nth-child(2){text-align:right;font-variant-numeric:tabular-nums}
-#farm-compact-controls .fh-earnings-summary>span:last-child{text-align:right;font-size:10px;color:#9db7a5;overflow-wrap:anywhere}
-#farm-compact-controls .fh-earnings-summary[data-full=true]>span:last-child{color:#b9d4a9}
-#farm-compact-controls .fh-earnings-summary[data-urgent=true]>span:last-child{color:#e2cc90}
-#farm-compact-controls .fh-earnings-row{margin:0 0 8px}
-#farm-compact-controls .fh-earnings-line{display:flex;justify-content:space-between;align-items:baseline;gap:8px;color:#c5d7c8;overflow-wrap:anywhere}
-#farm-compact-controls .fh-earnings-line>span:last-child{text-align:right}
+#farm-compact-controls .fh-body{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#farm-compact-controls .fh-scroll{min-height:0;overflow:auto;overscroll-behavior:contain;padding-right:2px}
+#farm-compact-controls .fh-earnings-stamp{font-size:10px;color:#e2cc90;margin:0 0 8px}
+#farm-compact-controls .fh-completion-title{font-size:12px;font-weight:600;margin:0 0 10px;color:#dbe7d7}
+#farm-compact-controls .fh-completion-list{display:flex;flex-direction:column;gap:4px}
+#farm-compact-controls .fh-completion-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:5px 0;font-size:11px;color:#c5d7c8}
+#farm-compact-controls .fh-completion-row>span:first-child{flex:none;min-width:60px}
+#farm-compact-controls .fh-completion-row>span:last-child{min-width:0;text-align:right;font-variant-numeric:tabular-nums;overflow-wrap:break-word}
+#farm-compact-controls .fh-completion-row[data-state=done]>span:last-child{color:#b9d4a9}
+#farm-compact-controls .fh-completion-row[data-state=limited]>span:last-child{color:#e2cc90}
 #farm-compact-controls .fh-earnings-note{font-size:10px;line-height:1.5;color:#9db7a5;margin:4px 0 0}
-#farm-compact-controls .fh-earnings-reset{margin-top:8px;white-space:pre-line}
-#farm-compact-controls .fh-earnings-stock{margin-top:16px}
-#farm-compact-controls .fh-earnings-stock h3{margin-bottom:8px}
-#farm-compact-controls .fh-earnings-bar{height:3px;border-radius:2px;background:#304b39;overflow:hidden;margin:0 0 4px}
-#farm-compact-controls .fh-earnings-bar i{display:block;height:100%;width:0;background:#aacb92}
-#farm-compact-controls .fh-earnings-details{border:0;margin:8px 0 0;padding:0}
-#farm-compact-controls .fh-earnings-details>summary{font-size:10px;color:#9db7a5;cursor:pointer;padding:4px 0}
-#farm-compact-controls .fh-earnings-details>div{padding:8px 0 4px}
-#farm-compact-controls .fh-earnings-warning{font-size:10px;line-height:1.5;color:#e2cc90;margin:12px 0 0}
+#farm-compact-controls .fh-earnings-reset{margin-top:12px;white-space:pre-line}
+#farm-compact-controls .fh-earnings-details{border:0;margin:12px 0 0;padding:0}
+#farm-compact-controls .fh-earnings-details>summary{font-size:10px;color:#9db7a5;padding:4px 0;cursor:pointer}
+#farm-compact-controls .fh-earnings-details>div{padding:6px 0 4px}
+#farm-compact-controls .fh-earnings-warning{font-size:10px;line-height:1.5;color:#e2cc90;margin:8px 0 0}
 #farm-compact-controls .fh-execution-compact{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;margin-top:12px;border:1px solid #35513e;border-radius:6px;background:#0e2117;color:#bfd3c4;font-size:10px;text-align:left}
 #farm-compact-controls .fh-execution-compact>span{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #farm-compact-controls .fh-execution-compact::after{content:'展开';color:#91ad99;flex-shrink:0}
@@ -98,7 +90,7 @@
   const make=(tag,text)=>{const el=document.createElement(tag);if(text)el.textContent=text;return el};
   const version=make('span');version.className='fh-version';const currentVersion=window.__farmLauncher?.status?.().version;version.textContent=currentVersion?'v'+currentVersion:'';version.setAttribute('aria-label',currentVersion?'助手版本 '+currentVersion:'');title.append(version);
   const head=make('div');head.className='fh-head';const fold=make('button');fold.className='fh-fold';fold.type='button';fold.setAttribute('aria-label','收起或展开助手');head.append(title,fold);
-  const body=make('div'),tabs=make('div');tabs.className='fh-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','助手功能');
+  const body=make('div'),scroll=make('div'),tabs=make('div');body.className='fh-body';scroll.className='fh-scroll';tabs.className='fh-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','助手功能');
   const pages={},buttons={},labels={battle:'战斗',field:'田地',animal:'动物',workshop:'作坊',daily:'日常',earnings:'收益'};
   for(const [id,name]of Object.entries(labels)){
     const tab=make('button',name),page=make('div');tab.type='button';tab.className='fh-tab';tab.id='farm-helper-tab-'+id;tab.setAttribute('role','tab');page.id='farm-helper-'+id+'-page';page.setAttribute('role','tabpanel');page.setAttribute('aria-labelledby',tab.id);tab.setAttribute('aria-controls',page.id);pages[id]=page;buttons[id]=tab;tabs.append(tab);
@@ -110,7 +102,7 @@
   const automation=window.__farmAutomation;
   if(automation){pages.animal.append(automation.sections.animal);pages.workshop.append(automation.sections.workshop);pages.daily.append(automation.sections.daily)}
   window.__farmEarnings?.mount(pages.earnings);
-  footer.classList.add('fh-footer');const task=make('div'),mini=make('div');mini.className='fh-mini';body.append(tabs,...Object.values(pages),task,footer);panel.replaceChildren(head,body,mini);
+  footer.classList.add('fh-footer');const task=make('div'),mini=make('div');mini.className='fh-mini';scroll.append(...Object.values(pages),task,footer);body.append(tabs,scroll);panel.replaceChildren(head,body,mini);
   const execution=make('section');execution.className='fh-execution';execution.setAttribute('aria-label','助手执行状态');
   const statusHead=make('div');statusHead.className='fh-execution-head';statusHead.setAttribute('role','status');statusHead.setAttribute('aria-live','polite');
   const label=make('span','运行状态');label.className='fh-execution-label';const badge=make('span');badge.className='fh-badge';
@@ -118,8 +110,8 @@
   const current=make('div');current.className='fh-current';
   const reason=make('p'),materials=make('p'),next=make('p');materials.className='fh-materials';next.className='fh-next';
   const executionDetails=make('details'),executionSummary=make('summary','执行详情'),overview=make('dl'),log=make('ol');overview.className='fh-overview';log.className='fh-log';log.setAttribute('aria-label','最近执行记录');
-  const logLabel=make('p','最近记录 · 最多 20 条，本次页面有效');executionDetails.append(executionSummary,overview,logLabel,log);
-  execution.append(statusHead,current,reason,materials,next,executionDetails);
+  const logLabel=make('p','最近记录 · 最多 20 条，本次页面有效');executionDetails.append(executionSummary,materials,overview,logLabel,log);
+  execution.append(statusHead,current,reason,next,executionDetails);
   const compactExecution=make('button'),compactText=make('span');compactExecution.type='button';compactExecution.className='fh-execution-compact';compactExecution.append(compactText);compactExecution.hidden=true;task.append(compactExecution,execution);
   let earningsExecutionExpanded=false;compactExecution.onclick=()=>{earningsExecutionExpanded=!earningsExecutionExpanded;render()};
   let lastView='',lastLog='',lastPhase='';
@@ -172,16 +164,16 @@
     if(onBattlePage&&visual?.goldGoal){const g=visual.goldGoal;view.rows.push({label:'本局金币',text:g.earned+' / '+(g.target??'读取中')});if(g.triggered){view.status='idle';view.title='战斗目标已达成';view.reason=g.message;view.next='已停止自动战斗，不会自动再次开局'}}
     const returning=window.__farmCombatReturn?.status?.();
     if(onBattlePage&&returning&&['waiting','countdown','returning','cancelled','error'].includes(returning.phase))view={status:returning.phase==='error'?'error':returning.phase==='cancelled'?'paused':'waiting',title:'战斗结束',reason:returning.message,items:[],next:'操作后重新等待5秒；Esc 取消本局自动返回。回村庄后农务按原开关继续。',rows:[]};
-    if(window.__farmVersionGuard?.isBlocked()){const v=window.__farmVersionGuard.status();view={status:'paused',title:'游戏版本保护',reason:v.message,items:[],next:v.detail,rows:[]}}
+    if(window.__farmVersionGuard?.status?.().blocked){const v=window.__farmVersionGuard.status();view={status:'paused',title:'游戏版本保护',reason:v.message,items:[],next:v.detail,rows:[]}}
     const phase=view.status+':'+view.title+':'+view.reason.replace(/\d+/g,'#');
     if(phase!==lastPhase){if(['error','paused'].includes(view.status))window.__farmActivity?.add(view.status,view.reason);lastPhase=phase}
     const statusNames={running:'执行中',waiting:'等待',paused:'暂停',error:'异常',idle:'未开启'};
     const heading=(statusNames[view.status]||'等待')+' · '+view.title;
     const compact=tab==='earnings'&&view.status!=='error';
-    compactExecution.hidden=!compact;compactExecution.setAttribute('aria-expanded',String(earningsExecutionExpanded));compactExecution.setAttribute('aria-label','运行状态：'+heading+'，'+(earningsExecutionExpanded?'收起详情':'展开详情'));compactText.textContent=heading;execution.hidden=compact&&!earningsExecutionExpanded;
+    compactExecution.hidden=!compact;compactExecution.setAttribute('aria-expanded',String(earningsExecutionExpanded));compactExecution.setAttribute('aria-label','运行状态：'+heading+'，'+(earningsExecutionExpanded?'收起详情':'展开详情'));compactText.textContent=heading;compactExecution.title=[view.reason,view.next].filter(Boolean).join('\n');execution.hidden=compact&&!earningsExecutionExpanded;
     const signature=JSON.stringify(view);
     if(signature!==lastView){
-      execution.dataset.status=view.status;statusText.textContent=statusNames[view.status]||'等待';current.textContent=view.title;reason.textContent=view.reason;materials.textContent=view.items.join('\n');materials.style.whiteSpace='pre-line';materials.hidden=!view.items.length;next.textContent=view.next;
+      execution.dataset.status=view.status;statusText.textContent=statusNames[view.status]||'等待';current.textContent=view.title;reason.textContent=view.reason;reason.hidden=!view.reason||view.reason===view.title||view.reason===view.next;materials.textContent=view.items.join('\n');materials.style.whiteSpace='pre-line';materials.hidden=!view.items.length;next.textContent=view.next;
       overview.replaceChildren(...view.rows.flatMap(row=>[make('dt',row.label),make('dd',row.text)]));
       mini.textContent=heading;mini.title=view.reason;lastView=signature;
     }

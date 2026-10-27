@@ -40,7 +40,7 @@
   document.addEventListener('visibilitychange',visibility);
   function blocked(){
     if(window.__farmManualCapture)return '手动测试记录中，自动战斗已暂停';
-    if(window.__farmVersionGuard?.isBlocked())return '游戏版本保护：自动战斗已暂停';
+    if(window.__farmVersionGuard?.isBlocked('battle'))return '游戏版本保护：自动战斗已暂停';
     if(document.activeElement?.matches?.('input,textarea,select,[contenteditable="true"]'))return '正在编辑设置，暂停战斗输入';
     if(document.hidden)return '页面已隐藏，暂停自动战斗';
     if(Date.now()<manualUntil||manualKeys.size||manualPointer)return '手动操作优先，稍后继续';

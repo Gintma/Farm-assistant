@@ -1,0 +1,31 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const source=fs.readFileSync('src/compatibility.js','utf8');
+function boot({store=new Map(),deny=false,catalog={},reply={ok:true}}={}){
+ const calls=[],window={__farmUpdateCatalog:catalog};let pending=Promise.resolve(new Response(JSON.stringify(reply)));
+ const original=function(...args){calls.push({self:this,args});return pending};window.fetch=original;
+ const context={window,fetch:original,URL,location:new URL('https://farmingseason.io/'),localStorage:{getItem:k=>{if(deny)throw Error();return store.get(k)},setItem:(k,v)=>{if(deny)throw Error();store.set(k,v)}}};
+ vm.runInNewContext(source,context);return {api:window.__farmCompatibility,window,store,calls,original,promise:()=>pending,reply:v=>pending=Promise.resolve(v),flush:()=>new Promise(setImmediate)};
+}
+const body=o=>JSON.stringify(o),issue=(b,id)=>b.api.status().issues.find(x=>x.id===id);
+(async()=>{
+ let b=boot();assert.equal(b.api.isBlocked('farm'),false);
+ b.api.request('/api/farm/battle/end',body({run:'run-secret',wave:10,kills:200,earned:20,seconds:600,died:false,stats:{sig:{value:'private'}},dbg:{drops:30,pending:0}}));assert.equal(b.api.status().issues.length,0);
+ b.api.request('/api/farm/battle/end',body({run:'run-secret',wave:10,kills:200,earned:20,seconds:600,died:false,stats:{sig:{},newStat:1}}));assert(b.api.isBlocked('battle'));assert(!b.api.isBlocked('farm'));assert(!JSON.stringify([...b.store]).includes('run-secret'));
+ const valid={quick:true,px:{pay:.1,charge:.1,mult:.5}};b.api.request('/api/farm/battle/start',body({...valid,unknown:true}));assert(issue(b,'request:/api/farm/battle/start'));b.api.request('/api/farm/battle/start',body(valid));assert(issue(b,'request:/api/farm/battle/start'));b.api.request('/api/farm/battle/start',body(valid));assert(!issue(b,'request:/api/farm/battle/start'));
+ b=boot();b.api.response('/api/farm/market',{offers:[]});assert(b.api.isBlocked('market'));assert(!b.api.isBlocked('workshop'));assert(!b.api.isBlocked('farm'));b.api.response('/api/farm/market',{ok:false,error:'sold'});assert(b.api.isBlocked('market'));b.api.response('/api/farm/market',{listings:[]});assert(b.api.isBlocked('market'));b.api.response('/api/farm/market',{listings:[]});assert(!b.api.isBlocked('market'));
+ b.api.response('/api/farm/order',{ok:true},'POST');assert(!b.api.isBlocked('workshop'),'delivery acknowledgement need not contain a GET budget');b.api.response('/api/farm/order',{budget:{left:'changed'}});assert(b.api.isBlocked('workshop'));assert(!b.api.isBlocked('farm'));b.api.response('/api/farm/order',{ok:true},'POST');b.api.response('/api/farm/order',{ok:true},'POST');assert(b.api.isBlocked('workshop'),'POST acknowledgements cannot clear a GET budget fault');
+ b.api.response('/api/farm',{owner:'x',farm:{owner:'x'},access:{open:true}});assert(b.api.isBlocked('farm'));assert(b.api.isBlocked('battle'));assert(b.api.isBlocked('earnings'));
+ const farm={owner:'fixture',access:{open:true},now:100,price:{pay:.1,charge:.1,mult:1},farm:{owner:'fixture',today:{energy:10,harvestEarned:0},tokens:0,fields:[],animals:[],structures:[]}};
+ b.api.response('/api/farm',farm);assert(b.api.isBlocked('farm'));b.api.response('/api/farm',farm);assert(!b.api.isBlocked('farm'));assert(b.api.isBlocked('workshop'),'unrelated fault is not cleared');
+ b=boot({deny:true});assert(b.api.isBlocked('farm'));assert(b.api.isBlocked('battle'));assert.equal(b.api.status().storageOK,false);
+ b=boot();const opts={method:'POST',headers:{'content-type':'application/json','X-private':'never-store'},body:body({i:1})},result=b.window.fetch('/api/farm/order',opts);assert.equal(result,b.promise(),'same original promise returned');assert.equal(b.calls[0].args[1],opts);const res=await result;await b.flush();assert.deepEqual(await res.json(),{ok:true},'game response remains readable');assert.equal(b.api.status().issues.length,0);assert(!JSON.stringify([...b.store]).includes('never-store'));
+ b.window.fetch('https://other.invalid/api/farm/order',{method:'POST',body:'bad'});b.window.fetch('/api/wallet',{method:'POST',body:'private'});await b.flush();assert.equal(b.api.status().issues.length,0);
+ b.reply(new Response('{}',{status:401}));await b.window.fetch('/api/farm');await b.flush();assert(b.api.isBlocked('battle'));assert(b.api.isBlocked('farm'));b.api.remove();assert.equal(b.window.fetch,b.original);
+ b=boot({reply:{budget:{left:1}}});b.api.fail('response:/api/farm/order','workshop','changed');await b.api.recheck();await b.flush();assert.equal(b.calls.length,2);assert(b.calls.every(c=>c.args[0]==='/api/farm/order'&&c.args[1].method===undefined));assert(!b.api.isBlocked('workshop'));
+ const persisted=b.store;b.api.fail('request:/api/farm/battle/end','battle','needs review');b=boot({store:persisted});assert(b.api.isBlocked('battle'));await b.api.recheck();assert.equal(b.calls.length,0,'no battle or POST replay to clear a fault');
+ b=boot({catalog:{aaa:{family:'copy',kind:'game'},bbb:{family:'copy',kind:'game'},ccc:{family:'cache',kind:'cache'},ddd:{family:'cache',kind:'cache'}}});
+ const snapshot=(game,helper,extra='unchanged')=>({roots:['https://farmingseason.io/assets/game-'+game+'.js'],files:[{url:'https://farmingseason.io/assets/game-'+game+'.js',hash:game==='abcdefgh'?'aaa':'bbb'},{url:'https://farmingseason.io/assets/vt323-latin-400-normal-'+helper+'.js',hash:helper==='abcdefgh'?'ccc':'ddd'},{url:'https://farmingseason.io/assets/custom.js',hash:extra}]});
+ const old=snapshot('abcdefgh','abcdefgh'),next=snapshot('ijklmnop','ijklmnop');assert(b.api.equivalent(old,next));assert(!b.api.equivalent(old,snapshot('ijklmnop','ijklmnop','new')));assert(!b.api.equivalent(old,{...next,files:next.files.slice(1)}));assert(!b.api.equivalent(old,{...next,files:[...next.files,{url:'https://farmingseason.io/assets/new.js',hash:'new'}]}));assert(!b.api.equivalent(old,{...next,roots:[]}));
+ next.files[0].url='https://farmingseason.io/assets/unreviewed.js';assert(!b.api.equivalent(old,next),'catalog hash only maps the audited file role');
+ console.log('PASS: scoped protocol faults, two-sample recovery, unchanged fetch/response, GET-only recheck, storage fail-closed, no sensitive persistence, audited full-graph equivalence');
+})().catch(e=>{console.error(e);process.exitCode=1});

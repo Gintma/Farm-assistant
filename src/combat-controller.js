@@ -11,7 +11,7 @@
     held.clear();
   }
   function apply(scene,action){
-    if(window.__farmManualCapture||window.__farmVersionGuard?.isBlocked()||scene.mode!=='play'||scene.paused||scene.hero?.dead||!(scene.run?.active||scene.tut)){release();return {casts:0,dodges:0}}
+    if(window.__farmManualCapture||window.__farmVersionGuard?.isBlocked('battle')||scene.mode!=='play'||scene.paused||scene.hero?.dead||!(scene.run?.active||scene.tut)){release();return {casts:0,dodges:0}}
     const wanted=new Set(action.keys.filter(k=>names[k]).map(k=>scene.keys?.[names[k]]));
     if(wanted.has(undefined)||[...wanted].some(k=>typeof k.onDown!=='function'||typeof k.onUp!=='function'))throw Error('游戏输入结构已变化，请关闭自动战斗');
     for(const key of held.keys())if(!wanted.has(key)){key.onUp(event());held.delete(key)}

@@ -64,7 +64,7 @@
   function releaseIfIdle(){if(!Object.values(flags).some(Boolean)&&!pending){leaseRelease?.();leaseRelease=null}}
   function pauseReason(){
     if(window.__farmManualCapture)return '手动测试记录中，全部自动农务已暂停';
-    if(window.__farmVersionGuard?.isBlocked())return '游戏版本保护：全部自动功能已暂停';
+    if(window.__farmVersionGuard?.isBlocked('farm'))return window.__farmVersionGuard.reason?.('farm')||'游戏版本保护：农务已暂停';
     if(window.__farmVerification?.isBlocked())return '等待人工验证，所有农务已暂停';
     if(document.hidden)return '切回游戏后继续';
     if(!visible(gameButton('dock','fields','#dock')))return '等待回到自己的农场';
@@ -170,7 +170,7 @@
       }else hint.fields='等待作物成熟';
     }
     if(flags.workshop&&config.marketBuy){
-      marketPlan=M.plan(d,config,board,market,ledger||{});
+      marketPlan=M.plan(d,config,board,window.__farmVersionGuard?.isBlocked('market')?[]:market,ledger||{});
       hint.workshop=marketFault?marketFault+'；'+(marketPlan?.note||hint.workshop):(marketPlan?.note||hint.workshop);
       const production=marketPlan?.selected&&!marketFault?M.productionJobs(d,marketPlan,jobs):[];
       if(!production.length&&!marketPlan?.selected){
@@ -197,7 +197,12 @@
     }
     return {jobs,hint};
   }
-  function click(el){if(window.__farmVersionGuard?.isBlocked())return false;if(!visible(el)||el.disabled)return false;el.click();return true}
+  function jobBlocked(job){
+    const g=window.__farmVersionGuard;if(!g)return '';
+    const scopes=job.kind==='craft-buy'?['farm','workshop','market']:job.kind.startsWith('craft-')?['farm','workshop']:['farm'];
+    const blocked=scopes.find(x=>g.isBlocked(x));return blocked?(g.reason?.(blocked)||'相关功能兼容性待核对'):'';
+  }
+  function click(el){if(window.__farmVersionGuard?.isBlocked('farm'))return false;if(!visible(el)||el.disabled)return false;el.click();return true}
   function openDock(arg){route.steps++;return click(gameButton('dock',arg,'#dock'))}
   function navigate(job){
     const key=job.route+':'+(job.id||'');if(!route||route.key!==key)route={key,steps:0,detail:false};
@@ -306,7 +311,8 @@
     if(!saveLedger()){pending=null;return false}return true;
   }
   function submit(job,d){
-    if(window.__farmVersionGuard?.isBlocked())return false;
+    if(window.__farmVersionGuard?.isBlocked('farm'))return false;
+    if(jobBlocked(job)){message=jobBlocked(job);return false}
     if(pauseReason()||leaseOwner!==owner||!storageOK||viewOnly||!flags[job.kind.startsWith('fish-')?'fishing':job.kind.startsWith('craft-')?'workshop':job.kind==='harvest'||job.kind==='plant'?'fields':job.kind==='orchard'?'orchard':job.kind==='income'?'income':job.kind])return false;
     if(job.kind==='craft-order'){
       const currentBoard=readOrders(d),current=currentBoard?.orders.find(o=>o.index===job.index);
@@ -402,7 +408,7 @@
       }
       if(board&&(board.owner!==f.owner||board.day!==W.orderDay(d)||board.terms!==M.terms(d)))board=null;
       const urgentFeed=flags.feed&&R.feedPlan(d).hungry.length>0;
-      if(flags.workshop&&!urgentFeed&&d.now>=workshopRetry){try{
+      if(flags.workshop&&!window.__farmVersionGuard?.isBlocked('workshop')&&!urgentFeed&&d.now>=workshopRetry){try{
           if(d.now-budgetAt>=30000||Number.isFinite(budgetAt)&&new Date(budgetAt).toISOString().slice(0,10)!==new Date(d.now).toISOString().slice(0,10)){
             const result=await W.readBudget(owner,d.now,controller.signal);
             if(removed||generation!==epoch||pauseReason())return;
@@ -415,7 +421,7 @@
         }
         W.syncBoard(board,d,orderBudget.left);
       }catch(error){board=null;route=null;workshopFault=error.message;workshopRetry=d.now+30000}}
-      if(flags.workshop&&config.marketBuy&&board&&board.orders.some(o=>!o.done&&W.reward(o)>0)&&d.now-marketAt>=30000){
+      if(flags.workshop&&config.marketBuy&&!window.__farmVersionGuard?.isBlocked('workshop')&&!window.__farmVersionGuard?.isBlocked('market')&&board&&board.orders.some(o=>!o.done&&W.reward(o)>0)&&d.now-marketAt>=30000){
         try{
           const response=await fetch('/api/farm/market',{credentials:'same-origin',cache:'no-store',signal:controller.signal});
           if(!response.ok)throw Error('市场报价读取失败 '+response.status);
@@ -428,6 +434,7 @@
       const {jobs,hint}=candidates(d);lastPlan={jobs,hint};for(const [k,v]of Object.entries(hint))if(notes[k])notes[k].textContent=v;
       let waiting=null;
       for(const job of jobs){
+        const compatibility=jobBlocked(job);if(compatibility){waiting=compatibility;continue}
         if(queueConflict(job,workers.jobs)){waiting='其他农夫已有相关任务排队，等待完成，避免重复提交';continue}
         const q=R.quote(d),protectedEnergy=['feed','collect','income'].includes(job.kind)?0:reserveFeed(d);
         if(f.today.energy<job.energy){
@@ -513,7 +520,7 @@
     const status=!storageOK||needsReview||now<backoff||workshopFault?'error':pause?'paused':pending?'running':enabled.length?'waiting':'idle';
     const f=snapshot?.farm,items=[],rows=[];
     if(f){
-      items.push('能量 '+f.today.energy+' · 已提交 '+requestCount+' 次');
+      items.push('本次已提交 '+requestCount+' 次');
       if(flags.fishing){try{items.push(R.fishingPlan(snapshot).note)}catch{}}
       if(flags.workshop&&board){try{
         const p=W.demands(snapshot,W.allowedOrders(board.orders,config),config.workshopEat);

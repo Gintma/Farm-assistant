@@ -50,6 +50,8 @@ if(require.main===module)(async()=>{
   b=await boot();const scene=b.context.window.__farmGame.scene.scenes[0];scene.mode={type:mode};b.api.set('feed',true);await b.step(4);assert.equal(b.clicks.length,0);assert.equal(b.api.status().pending,null);assert.match(b.api.status().message,/移动或放置/);assert.equal(scene.mode.type,mode);scene.mode={type:'normal'};await b.step();assert.equal(b.clicks.at(-1),'feed-all');b.api.remove();
  }
  b=await boot();b.api.set('feed',true);await b.step();b.context.window.__farmGame.scene.scenes[0].mode={type:'move'};await b.step(20,15000);assert.equal(b.clicks.length,1);assert.equal(b.api.status().needsReview,false);assert.equal(b.api.status().pending.activeMs,0);b.context.window.__farmGame.scene.scenes[0].mode={type:'normal'};b.d.farm.animals.forEach(a=>a.fedWindows=['2026-10-23S']);b.queue([]);await b.step();assert.equal(b.api.status().pending,null);assert.equal(b.api.status().flags.feed,true);b.api.remove();
+ // A scoped workshop/market fault must leave unrelated feed work available.
+ b=await boot(new Map(),{isBlocked:scope=>['workshop','market'].includes(scope),reason:()=> '作坊兼容性待核对'});b.api.set('workshop',true);b.api.set('feed',true);await b.step();assert.equal(b.clicks.at(-1),'feed-all');assert.equal(b.api.status().flags.workshop,true);assert.equal(b.api.status().flags.feed,true);b.api.remove();
  console.log('PASS: opt-in; one queue; feed budget; energy budget and small-pack only; no duplicates; pending survives reinstall; verification/modal/manual/background guards; fail-closed storage; timeout/Esc; invalid input');
 })().catch(e=>{console.error(e);process.exitCode=1});
 
