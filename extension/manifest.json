@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "农耕战斗助手",
-  "version": "1.20.1",
+  "version": "1.20.2",
   "description": "当前游戏页的战斗、田地、动物、作坊与日常农务助手；花金币需手动开启并设置每日预算。",
   "permissions": [
     "activeTab",

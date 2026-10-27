@@ -1,9 +1,9 @@
-/* Farming Season helper 1.20.1: original combat mechanics and unified controls. */
+/* Farming Season helper 1.20.2: original combat mechanics and unified controls. */
 (() => {
   if(location.hostname!=='farmingseason.io')throw Error('请只在 Farming Season 游戏页启动');
   const temp1=window.__farmGame||window.temp1;
   if(!temp1?.scene?.scenes)throw Error('未找到游戏实例，请使用扩展启动');
-  if(window.__farmLauncher?.status?.().version==='1.20.1')return '助手已开启，保留当前所有开关';
+  if(window.__farmLauncher?.status?.().version==='1.20.2')return '助手已开启，保留当前所有开关';
   const handoff={farm:window.__farmAutoFarm?.status?.(),automation:window.__farmAutomation?.status?.(),layout:window.__farmLayout?.status?.()};
   if(handoff.farm?.pending)throw Error('旧版农活尚未完成，请等队列完成后再次开启新版助手');
   window.__farmLauncher?.remove();
@@ -12,9 +12,9 @@
   window.__farmDodge?.restore();window.__farmSeek?.restore();window.__farmInvincible?.restore();
   window.__farmHandoff=handoff;
   function cleanup(){
-    window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();
+    window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();
   }
-  window.__farmLauncher={status:()=>({installed:true,version:'1.20.1',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
+  window.__farmLauncher={status:()=>({installed:true,version:'1.20.2',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{
 /* Pure planning over read-only snapshots. Inputs are regular direction/Space/E keys. */
 (() => {
@@ -1667,6 +1667,69 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
   window.__farmCombatPerks={status:()=>({choices,message,waiting:!!signature&&!clicked}),remove:()=>{clearInterval(timer);delete window.__farmCombatPerks}};
 })();
 
+/* Return through the visible game button only after a confirmed result and idle time. */
+(() => {
+  window.__farmCombatReturn?.remove();
+  let run=null,seen=false,cancelled=false,clicked=false,idleSince=null,lastInput=performance.now();
+  let state={phase:'idle',message:'战斗结算后空闲5秒自动回村庄',remaining:null};
+  const keys=new Set();let pointer=false,returnRoot=null,clickedAt=0;
+  const visible=e=>!!e&&e.isConnected&&!e.hidden&&!!e.getClientRects().length&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';
+  const scene=()=>(window.__farmGame||window.temp1)?.scene?.scenes?.find(s=>s.sys?.settings?.key==='battle');
+  function resetWait(message){idleSince=null;state={phase:'waiting',message,remaining:null}}
+  function manual(e){
+    if(!e.isTrusted)return;
+    lastInput=performance.now();idleSince=null;
+    if(e.type==='keydown'){keys.add(e.code);if(e.code==='Escape'&&run)cancelled=true}
+    if(e.type==='keyup')keys.delete(e.code);
+    if(e.type==='pointerdown')pointer=true;
+    if(e.type==='pointerup'||e.type==='pointercancel')pointer=false;
+  }
+  function blur(){keys.clear();pointer=false}
+  function visibility(){idleSince=null;lastInput=performance.now();if(document.hidden)blur()}
+  const inputs=['keydown','keyup','pointerdown','pointerup','pointercancel','pointermove','wheel','input','change'];
+  for(const type of inputs)window.addEventListener(type,manual,true);
+  window.addEventListener('blur',blur);document.addEventListener('visibilitychange',visibility);
+  function tick(){
+    if(clicked&&state.phase==='returning'){
+      if(!visible(returnRoot)){state={phase:'returned',message:'已回村庄，农务按原开关继续',remaining:null};window.__farmActivity?.add('battle',state.message)}
+      else if(performance.now()-clickedAt>=3000)state={phase:'error',message:'回村庄未生效，请手动返回',remaining:null};
+      return;
+    }
+    const s=scene();
+    if(!s||s.run!==run){run=s?.run??null;seen=false;cancelled=false;clicked=false;idleSince=null;state={phase:'idle',message:'战斗结算后空闲5秒自动回村庄',remaining:null}}
+    if(!s||!run)return;
+    if(run.active){if(!s.tut)seen=true;idleSince=null;return}
+    if(!seen||s.tut||s.mode!=='over')return;
+    if(cancelled){state={phase:'cancelled',message:'已取消本局自动回村庄，请手动返回',remaining:null};return}
+    if(clicked)return;
+    const root=document.getElementById('battle-ui');
+    if(!visible(root)){idleSince=null;return}
+    if(window.__farmManualCapture||window.__farmVersionGuard?.isBlocked()||window.__farmVerification?.isBlocked?.()||document.hidden){resetWait('等待页面可见、版本检查和验证完成');return}
+    if(keys.size||pointer||document.activeElement?.matches?.('input,textarea,select,[contenteditable="true"]')||[...document.querySelectorAll('#modal,[role="dialog"],.cf-turnstile,iframe[src*="challenges.cloudflare.com"]')].some(visible)){resetWait('手动操作或弹窗中，稍后重新计时');return}
+    const summary=root.querySelector('.bui-screen .bstats');
+    const home=root.querySelector('.bui-screen button[data-action="go-home"]');
+    // The game renders these only after its battle/end response supplies the
+    // leaderboard/cup result. A summary by itself appears before that response.
+    const confirmed=['rank','cuprank'].some(k=>{const e=root.querySelector('[data-b="'+k+'"]');return visible(e)&&!!e.textContent.trim()});
+    if(!visible(summary)||!visible(home)||home.disabled||!confirmed){resetWait('等待游戏收到服务器结算结果，暂不自动返回');return}
+    const now=performance.now();if(idleSince===null)idleSince=Math.max(now,lastInput);
+    const remaining=Math.max(0,Math.ceil((5000-(now-idleSince))/1000));
+    state={phase:'countdown',message:'无操作 '+remaining+' 秒后回村庄',remaining};
+    if(remaining)return;
+    clicked=true;window.__farmCombat?.set('enabled',false);window.__farmBattleInput?.release();
+    try{
+      returnRoot=root;clickedAt=performance.now();state={phase:'returning',message:'正在回村庄',remaining:null};
+      home.click();
+    }catch{state={phase:'error',message:'回村庄失败，请手动返回',remaining:null}}
+  }
+  const timer=setInterval(tick,100);
+  window.__farmCombatReturn={status:()=>({...state}),remove:()=>{
+    clearInterval(timer);for(const type of inputs)window.removeEventListener(type,manual,true);
+    window.removeEventListener('blur',blur);document.removeEventListener('visibilitychange',visibility);
+    delete window.__farmCombatReturn;
+  }};
+})();
+
 /* Shared compact shell; one switch controls the entire battle routine. */
 (() => {
   window.__farmCompact?.remove();
@@ -1801,7 +1864,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     const tab=make('button',name),page=make('div');tab.type='button';tab.className='fh-tab';tab.id='farm-helper-tab-'+id;tab.setAttribute('role','tab');page.id='farm-helper-'+id+'-page';page.setAttribute('role','tabpanel');page.setAttribute('aria-labelledby',tab.id);tab.setAttribute('aria-controls',page.id);pages[id]=page;buttons[id]=tab;tabs.append(tab);
   }
   const empty=make('div','状态读取模式需要通过扩展启动。');empty.className='fh-empty';
-  const battle=make('div');battle.className='fh-battle-controls';const waveNote=make('p','保留正常受伤与死亡；状态不可用时暂停输入。页面可见时失焦继续；页面隐藏或游戏暂停时停止输入；Esc 关闭自动战斗。');waveNote.className='fh-note';battle.append(...rows,waveNote,goal);pages.battle.append(empty,battle);
+  const battle=make('div');battle.className='fh-battle-controls';const waveNote=make('p','保留正常受伤与死亡；状态不可用时暂停输入。页面可见时失焦继续；页面隐藏或游戏暂停时停止输入；Esc 关闭自动战斗；结算确认后无操作5秒回村庄。');waveNote.className='fh-note';battle.append(...rows,waveNote,goal);pages.battle.append(empty,battle);
   if(detail){const stats=make('details');stats.className='fh-stats';stats.append(make('summary','战斗状态'),detail);pages.battle.append(stats)}
   if(farm)pages.field.append(farm);
   const automation=window.__farmAutomation;
@@ -1867,6 +1930,8 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
       view={status:visual.selecting?'waiting':visual.phase==='error'?'error':visual.phase==='running'?'running':'waiting',title:'战斗 · 生存优先',reason:visual.selecting?visual.perkMessage:visual.message||'等待状态',items:['怪物 '+(visual.enemies||0)+'（入场 '+(visual.entering||0)+' · 隐身 '+(visual.hiddenEnemies||0)+'） · 弹道 '+(visual.projectiles||0),'风暴 '+(visual.casts||0)+' 次 · 闪避 '+(visual.dodges||0)+' 次 · 已选升级 '+(visual.choices||0)+' 次'],next:visual.selecting?'升级随机等待 1.1～3.5 秒，按原优先级选择':'正常受伤；请保持游戏页面可见，Esc 停止',rows:[{label:'状态',text:visual.recognized?'玩家状态正常 · 控制耗时 '+(visual.frameMs||0)+'ms':'等待有效状态'},{label:'策略',text:visual.riskLevel==='survive'?'优先生存':'等待判断'},{label:'效率',text:(visual.killsPerMinute==null?'统计中':visual.killsPerMinute+' 击杀/分')+' · 受击 '+(visual.hits||0)+' 次'},{label:'移动',text:'赶路闪避 '+(visual.travelDodges||0)+' 次 · 脱困 '+(visual.unsticks||0)+' 次'}]};
     }
     if(onBattlePage&&visual?.goldGoal){const g=visual.goldGoal;view.rows.push({label:'本局金币',text:g.earned+' / '+(g.target??'读取中')});if(g.triggered){view.status='idle';view.title='战斗目标已达成';view.reason=g.message;view.next='已停止自动战斗，不会自动再次开局'}}
+    const returning=window.__farmCombatReturn?.status?.();
+    if(onBattlePage&&returning&&['waiting','countdown','returning','cancelled','error'].includes(returning.phase))view={status:returning.phase==='error'?'error':returning.phase==='cancelled'?'paused':'waiting',title:'战斗结束',reason:returning.message,items:[],next:'操作后重新等待5秒；Esc 取消本局自动返回。回村庄后农务按原开关继续。',rows:[]};
     if(window.__farmVersionGuard?.isBlocked()){const v=window.__farmVersionGuard.status();view={status:'paused',title:'游戏版本保护',reason:v.message,items:[],next:v.detail,rows:[]}}
     const phase=view.status+':'+view.title+':'+view.reason.replace(/\d+/g,'#');
     if(phase!==lastPhase){if(['error','paused'].includes(view.status))window.__farmActivity?.add(view.status,view.reason);lastPhase=phase}
@@ -1897,5 +1962,5 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 1.20.1 已开启；请先完成面板内的游戏版本检查';
+  return '助手 1.20.2 已开启；请先完成面板内的游戏版本检查';
 })();
