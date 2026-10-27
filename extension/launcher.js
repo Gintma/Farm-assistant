@@ -1,9 +1,9 @@
-/* Farming Season helper 1.21.0: original combat mechanics and unified controls. */
+/* Farming Season helper 1.21.1: original combat mechanics and unified controls. */
 (() => {
   if(location.hostname!=='farmingseason.io')throw Error('请只在 Farming Season 游戏页启动');
   const temp1=window.__farmGame||window.temp1;
   if(!temp1?.scene?.scenes)throw Error('未找到游戏实例，请使用扩展启动');
-  if(window.__farmLauncher?.status?.().version==='1.21.0')return '助手已开启，保留当前所有开关';
+  if(window.__farmLauncher?.status?.().version==='1.21.1')return '助手已开启，保留当前所有开关';
   const handoff={farm:window.__farmAutoFarm?.status?.(),automation:window.__farmAutomation?.status?.(),layout:window.__farmLayout?.status?.()};
   if(handoff.farm?.pending)throw Error('旧版农活尚未完成，请等队列完成后再次开启新版助手');
   window.__farmLauncher?.remove();
@@ -14,7 +14,7 @@
   function cleanup(){
     window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();window.__farmCompatibility?.remove();delete window.__farmUpdateCatalog;
   }
-  window.__farmLauncher={status:()=>({installed:true,version:'1.21.0',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
+  window.__farmLauncher={status:()=>({installed:true,version:'1.21.1',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{
 /* Pure planning over read-only snapshots. Inputs are regular direction/Space/E keys. */
 (() => {
@@ -528,7 +528,7 @@ window.__farmUpdateCatalog=Object.freeze({
 (() => {
   if(window.__farmActivity)return;
   const entries=[];
-  const labels={feed:'喂养动物',collect:'收动物产出',orchard:'采摘果园',income:'领取村庄收入',mine:'收取矿车',oil:'抽取石油',harvest:'收获田地',plant:'补种田地',energy:'购买能量','fish-bait':'购买鱼饵','fish-run':'开始连续钓鱼','fish-reel':'收竿','craft-buy':'市场采购','craft-start':'作坊加工','craft-take':'收取作坊成品','craft-order':'交付订单','craft-keep':'调整产物保留','craft-wool':'收取作坊羊毛','craft-milk':'收取作坊牛奶','craft-eggs':'收取鸡蛋','craft-eat':'面包补能量'};
+  const labels={feed:'喂养动物',collect:'收动物产出',orchard:'采摘果园',income:'领取村庄收入',mine:'收取矿车',oil:'抽取石油',harvest:'收获田地',plant:'补种田地',energy:'购买能量','fish-bait':'购买鱼饵','fish-run':'抛竿钓鱼','fish-reel':'收竿','craft-buy':'市场采购','craft-start':'作坊加工','craft-take':'收取作坊成品','craft-order':'交付订单','craft-keep':'调整产物保留','craft-wool':'收取作坊羊毛','craft-milk':'收取作坊牛奶','craft-eggs':'收取鸡蛋','craft-eat':'面包补能量'};
   function describe(job){if(!job)return '';let name=labels[job.kind]||'农务';if(job.kind==='craft-buy')name+=' · '+(window.__farmMarket?.names[job.item]||job.item)+' '+job.count+' 份 · '+job.cost+' 金币';if(job.kind==='craft-start')name=({flour:'磨粉',bread:'烤面包',butter:'制作黄油',cheese:'制作奶酪',cloth:'织布'}[job.recipe]||'作坊加工')+' '+job.count+' 批';if(job.kind==='craft-keep')name+=' · '+({egg:'鸡蛋',milk:'牛奶',wool:'羊毛'}[job.arg]||'产物')+(job.keep?'保留':'出售');if(job.kind==='fish-bait')name+=' '+job.count+' 个';if(job.kind==='fish-run')name+=' '+job.count+' 次';if(job.kind==='plant')name+=' · '+(window.__farmRules?.crops[job.crop]?.name||job.crop);if(job.kind==='craft-order')name+=' #'+(job.index+1);if(job.kind==='craft-eat')name+=' '+job.count+' 个';if(job.prep)name+=' · 次日备货';return name}
   function add(type,text){const last=entries[0];if(last?.type===type&&last.text===text)return;entries.unshift({at:Date.now(),type,text});entries.splice(20)}
   window.__farmActivity={describe,add,entries:()=>entries.map(e=>({...e})),remove:()=>{delete window.__farmActivity}};
@@ -711,21 +711,28 @@ window.__farmUpdateCatalog=Object.freeze({
     const progress='今日已购 '+bought+'/20 · 已抛竿 '+casts+'/20 · 鱼饵 '+fish.bait;
     if(fish.line){
       if(!Number.isFinite(fish.line.bite))throw Error('鱼竿状态无法确认');
-      if(d.now<fish.line.bite)return {jobs:[],note:progress+' · 等待上钩'};
-      return {jobs:[{...base,kind:'fish-reel',action:'pond-fish',arg:pond.id,before:fish.caught,lineAt:fish.line.at}],note:progress+' · 收起已上钩的鱼'};
+      const finishing=q.rewardMultKnown&&q.remaining<=0?' · 收获已满，仅完成本竿':'';
+      if(d.now<fish.line.bite)return {jobs:[],note:progress+finishing+' · 等待上钩'};
+      return {jobs:[{...base,kind:'fish-reel',action:'pond-fish',arg:pond.id,before:fish.caught,lineAt:fish.line.at}],note:progress+finishing+' · 收起已上钩的鱼'};
     }
-    if(bought<20){const count=20-bought,cost=unit*count;
+    // Recover an existing line above, but never spend bait/coins once today's
+    // shared harvest allowance is full or its payout multiplier is unknown.
+    if(!q.rewardMultKnown)return {jobs:[],note:progress+' · 收获额度未确认，暂停购买与抛竿'};
+    if(q.remaining<=0)return {jobs:[],note:progress+' · 今日收获已满，暂停钓鱼；鱼饵保留'};
+    if(casts>=20)return {jobs:[],note:progress+' · 今日已完成'};
+    if(fish.bait>0)return {jobs:[{...base,kind:'fish-run',action:'pond-fish',arg:pond.id,count:1,before:casts,beforeTotal:fish.total,beforeCaught:fish.caught}],note:progress+' · 逐竿钓鱼，收竿后重查额度'};
+    if(bought<20){const count=Math.min(20-bought,20-casts),cost=unit*count;
       return {jobs:f.tokens>=cost?[{...base,kind:'fish-bait',action:'buy-bait',arg:String(count),count,cost,unit,before:bought}]:[],note:progress+' · 补买 '+count+' 个约 '+cost+' 金币'+(f.tokens<cost?'，余额不足':'')};
     }
-    const count=Math.min(fish.bait,20-casts);
-    return {jobs:count?[{...base,kind:'fish-run',action:'pond-fish-n',arg:pond.id+'|'+count,count,before:casts,beforeTotal:fish.total,beforeCaught:fish.caught}]:[],note:progress+(casts>=20?' · 今日已完成':count?' · 待连续钓完 '+count+' 次':' · 鱼饵不足，今日购买已满')};
+    return {jobs:[],note:progress+' · 鱼饵不足，今日购买已满'};
   }
   function fishingPendingDone(p,d){
     if(!p.kind?.startsWith('fish-'))return false;
     if(p.day!==calendar(d.farm,d.now).day)return true;
     const f=d.farm.fishing;if(!f)return false;
     if(p.kind==='fish-bait')return f.day===p.day&&f.bought>=p.before+p.count;
-    // Batch submission is confirmed on the first cast; the game's worker owns the remaining run.
+    // New runs contain one cast. Legacy batches still confirm on the first cast;
+    // their remaining work can only be stopped through the game's own button.
     if(p.kind==='fish-run')return f.total>p.beforeTotal||f.caught>p.beforeCaught||(f.day===p.day&&f.casts>p.before);
     if(p.kind==='fish-reel')return f.caught>p.before;
     return false;
@@ -1105,7 +1112,7 @@ window.__farmUpdateCatalog=Object.freeze({
   try{const c=JSON.parse(localStorage.getItem('farm-helper.auto-farm-config'));if(R.crops[c?.crop])config.crop=c.crop;if(Number.isInteger(c?.reserve)&&c.reserve>=0&&c.reserve<=100)config.reserve=c.reserve}catch{}
   const handoff=window.__farmHandoff;if(handoff?.farm){config.crop=R.crops[handoff.farm.crop]?handoff.farm.crop:config.crop;config.reserve=handoff.farm.reserve??config.reserve;flags.fields=!!handoff.farm.enabled}
   if(handoff?.automation?.flags)for(const key of Object.keys(flags))if(key in handoff.automation.flags)flags[key]=!!handoff.automation.flags[key];
-  const changedFlags=new Set();
+  const changedFlags=new Set(),stoppedFishBatches=new WeakSet();
   let removed=false,busy=false,epoch=0,lastRead=-Infinity,backoff=0,manualUntil=0,lastGrain='corn';
   let snapshotAt=-Infinity,snapshot=null,owner=null,ledger=null,leaseOwner=null,leasePending=false,leaseRelease=null,storageOK=true;
   let route=null,activeMark=null,needsReview=false,message='选择需要的自动功能',controller=null;
@@ -1343,7 +1350,7 @@ window.__farmUpdateCatalog=Object.freeze({
       route.detail=false;openDock('fields');return false;
     }
     if(job.route==='rwa'){
-      if(panelOpen()&&(gameButton(job.action,job.arg??job.id)||job.kind==='fish-bait'&&gameButton('buy-bait')||job.kind==='fish-run'&&gameButton('pond-fish-n')||job.kind==='craft-start'&&gameButton('craft-start',job.recipe+':1')||job.kind==='craft-eat'&&gameButton('eat-bread')))return true;
+      if(panelOpen()&&(gameButton(job.action,job.arg??job.id)||job.kind==='fish-bait'&&gameButton('buy-bait')||job.kind==='craft-start'&&gameButton('craft-start',job.recipe+':1')||job.kind==='craft-eat'&&gameButton('eat-bread')))return true;
       if(panelOpen()&&click(gameButton('rwa-open',job.id))){route.steps++;return false}
       if(panelOpen()&&click(gameButton('shop','build'))){route.steps++;return false}
       openDock('shop');return false;
@@ -1375,13 +1382,24 @@ window.__farmUpdateCatalog=Object.freeze({
     });
     const result={owner:d.farm.owner,day:W.orderDay(d),at:d.now,terms:M.terms(d),orders};return W.syncBoard(result,d,orderBudget?.left||0);
   }
-  function prepareFishingButton(job){
-    if(job.kind==='fish-run'){
-      const input=document.querySelector('#panel input[data-draft="pond.n"]');
-      if(!visible(input)||input.disabled||Number(input.max)<job.count)return false;
-      input.value=String(job.count);input.dispatchEvent(new Event('input',{bubbles:true}));
+  function stopFullFishing(d,workers){
+    if(!flags.fishing)return false;
+    const q=R.quote(d);if(!q.rewardMultKnown||q.remaining>0)return false;
+    const batch=workers?.jobs.find(j=>j?.type==='fish-all'&&d.farm.structures.some(s=>s.kind==='pond'&&s.id===j.structureId));
+    if(!batch||stoppedFishBatches.has(batch))return false;
+    const stop=gameButton('pond-stop',batch.structureId);
+    if(stop){
+      if(click(stop)){stoppedFishBatches.add(batch);requestCount++;route=null;message='今日收获已满，已请求钓完本条后停止连续钓鱼';activity?.add('submitted',message)}
       return true;
     }
+    // The pond can already be waiting for this fish to finish, or the old
+    // batch has not started yet. Never clear/rewrite the worker's queue.
+    if(panelOpen()&&gameButton('buy-bait'))return false;
+    const job={route:'rwa',id:batch.structureId,action:'pond-stop',arg:batch.structureId};
+    if(route?.key==='rwa:'+batch.structureId&&route.steps>6){message='今日收获已满，未找到连续钓鱼停止按钮，请手动检查';return false}
+    navigate(job);message='今日收获已满，打开钓鱼池检查连续钓鱼停止按钮';return true;
+  }
+  function prepareFishingButton(job){
     if(job.kind!=='fish-bait'||gameButton('buy-bait',job.arg))return true;
     const original=gameButton('buy-bait');if(!original||job.count<1||job.count>20)return false;
     const button=el('button','补购 '+job.count+' 鱼饵 · '+job.cost);button.type='button';button.className='btn small fh-workshop-action';button.dataset.action='buy-bait';button.dataset.arg=job.arg;original.parentElement.append(button);return true;
@@ -1452,7 +1470,7 @@ window.__farmUpdateCatalog=Object.freeze({
     if(job.kind==='craft-order'){budgetAt=-Infinity;W.invalidateBudget(owner)}
     if(job.kind==='craft-buy'){marketAt=-Infinity;market=[]}
     route=null;activeMark=performance.now();
-    message=job.kind==='energy'?'已购买一小包能量，等待确认':'已提交'+({feed:'喂食',collect:'动物收集',orchard:'果园采摘',income:'村庄领取',mine:'矿车收取',oil:'抽油',harvest:'批量收获',plant:'批量播种','craft-buy':'市场采购','craft-start':'作坊加工','craft-take':'成品收取','craft-order':'订单交付','craft-keep':'产物保留设置','craft-eggs':'鸡蛋收取','craft-milk':'牛奶收取','fish-bait':'鱼饵购买','fish-run':'连续钓鱼','fish-reel':'收竿','craft-eat':'面包补能量'}[job.kind]||'农活')+'，等待游戏完成';
+    message=job.kind==='energy'?'已购买一小包能量，等待确认':'已提交'+({feed:'喂食',collect:'动物收集',orchard:'果园采摘',income:'村庄领取',mine:'矿车收取',oil:'抽油',harvest:'批量收获',plant:'批量播种','craft-buy':'市场采购','craft-start':'作坊加工','craft-take':'成品收取','craft-order':'订单交付','craft-keep':'产物保留设置','craft-eggs':'鸡蛋收取','craft-milk':'牛奶收取','fish-bait':'鱼饵购买','fish-run':'单竿钓鱼','fish-reel':'收竿','craft-eat':'面包补能量'}[job.kind]||'农活')+'，等待游戏完成';
     return true;
   }
   async function verifyPurchase(job,d,generation){
@@ -1497,6 +1515,7 @@ window.__farmUpdateCatalog=Object.freeze({
         }
       }
       if(needsReview){message='等待手动检查农活队列';return}
+      if(stopFullFishing(d,workers))return;
       if(!workers){message='无法确认每位农夫状态，请等待游戏加载';return}
       if(!workers.idle){
         if(workers.building>=workers.total)message='所有农夫都在施工，等待空闲农夫';
@@ -1589,7 +1608,7 @@ window.__farmUpdateCatalog=Object.freeze({
   const feedDetails=el('details'),fs=el('summary','金币饲料设置');feedDetails.append(fs);check(feedDetails,'允许金币购买饲料','feedGold',true);number(feedDetails,'每日金币喂养限额','feedBudget',0,1000000);note(feedDetails,null,'包含当天手动金币喂养；0 表示禁止花金币。只用游戏自动补饲料，不去玩家市场购买。');animal.append(feedDetails);
   const daily=el('section');daily.id='farm-daily-controls';sections.daily=daily;
   for(const [key,label,text]of [['income','自动领取村庄收入','约每小时领取，避免满仓'],['mine','自动收取矿车','两车一起收；不出售金银'],['oil','自动抽取石油','每天一次；不出售石油']]){check(daily,label,key);note(daily,key,text)}
-  check(daily,'每天买满20鱼饵并连续钓完','fishing');note(daily,'fishing','含当天手动购买；按游戏报价花金币。满额后鱼进鱼箱，不自动卖鱼或切饲料。');
+  check(daily,'自动钓鱼（收获满额即停）','fishing');note(daily,'fishing','每天最多20竿，先用剩余鱼饵；不足时按游戏报价补购，含手动购买。逐竿检查额度，满额不再买饵或抛竿；已抛出的本竿正常收尾。');
   const ed=el('details'),es=el('summary','能量补购设置');ed.append(es);check(ed,'允许自动购买能量','energy');number(ed,'每日能量购买限额','energyBudget',0,1000000);note(ed,null,'只补 10 点小包；需有可估算的新增收益。未开启或限额为 0 时不购买。');daily.append(ed);
   const workshop=el('section');workshop.id='farm-workshop-controls';sections.workshop=workshop;
   check(workshop,'自动作坊与订单','workshop');
@@ -1650,6 +1669,7 @@ window.__farmUpdateCatalog=Object.freeze({
       if(cropTimes.length){title='等待作物成熟';const minutes=Math.max(1,Math.ceil(Math.min(...cropTimes)/60000));nextText='下批作物约 '+(minutes>=60?Math.floor(minutes/60)+' 小时 '+minutes%60+' 分钟':minutes+' 分钟')+'后可收';reason='当前没有可立即执行的农务'}
 if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/羊毛/.test(reason)?'等待羊毛':/牛奶/.test(reason)?'等待牛奶':/鸡蛋/.test(reason)?'等待鸡蛋':/小麦/.test(reason)?'等待小麦':/加工/.test(reason)?'作坊加工中':title}
     }
+    if(status==='waiting'&&!lastPlan.jobs.length&&flags.fishing&&!enabled.some(k=>!['fishing','energy'].includes(k))){title='钓鱼等待';reason=lastPlan.hint.fishing||message;nextText=snapshot&&R.quote(snapshot).remaining<=0?'收获额度恢复后继续，保留鱼饵与开关':'额度允许时继续，每天最多20竿'}
     if(status==='waiting'&&lastWorkers&&lastWorkers.idle===0){title='等待空闲农夫';reason=message;nextText='有农夫空闲后重新安排农活；不清空或搬动已有队列'}
     return {status,title,reason,items,next:nextText,rows,enabled:enabled.length,age:snapshot?Math.max(0,Math.floor((now-lastRead)/1000)):null};
   }
@@ -2365,5 +2385,5 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 1.21.0 已开启；请先完成面板内的游戏版本检查';
+  return '助手 1.21.1 已开启；请先完成面板内的游戏版本检查';
 })();

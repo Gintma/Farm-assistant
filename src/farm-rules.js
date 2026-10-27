@@ -109,21 +109,28 @@
     const progress='今日已购 '+bought+'/20 · 已抛竿 '+casts+'/20 · 鱼饵 '+fish.bait;
     if(fish.line){
       if(!Number.isFinite(fish.line.bite))throw Error('鱼竿状态无法确认');
-      if(d.now<fish.line.bite)return {jobs:[],note:progress+' · 等待上钩'};
-      return {jobs:[{...base,kind:'fish-reel',action:'pond-fish',arg:pond.id,before:fish.caught,lineAt:fish.line.at}],note:progress+' · 收起已上钩的鱼'};
+      const finishing=q.rewardMultKnown&&q.remaining<=0?' · 收获已满，仅完成本竿':'';
+      if(d.now<fish.line.bite)return {jobs:[],note:progress+finishing+' · 等待上钩'};
+      return {jobs:[{...base,kind:'fish-reel',action:'pond-fish',arg:pond.id,before:fish.caught,lineAt:fish.line.at}],note:progress+finishing+' · 收起已上钩的鱼'};
     }
-    if(bought<20){const count=20-bought,cost=unit*count;
+    // Recover an existing line above, but never spend bait/coins once today's
+    // shared harvest allowance is full or its payout multiplier is unknown.
+    if(!q.rewardMultKnown)return {jobs:[],note:progress+' · 收获额度未确认，暂停购买与抛竿'};
+    if(q.remaining<=0)return {jobs:[],note:progress+' · 今日收获已满，暂停钓鱼；鱼饵保留'};
+    if(casts>=20)return {jobs:[],note:progress+' · 今日已完成'};
+    if(fish.bait>0)return {jobs:[{...base,kind:'fish-run',action:'pond-fish',arg:pond.id,count:1,before:casts,beforeTotal:fish.total,beforeCaught:fish.caught}],note:progress+' · 逐竿钓鱼，收竿后重查额度'};
+    if(bought<20){const count=Math.min(20-bought,20-casts),cost=unit*count;
       return {jobs:f.tokens>=cost?[{...base,kind:'fish-bait',action:'buy-bait',arg:String(count),count,cost,unit,before:bought}]:[],note:progress+' · 补买 '+count+' 个约 '+cost+' 金币'+(f.tokens<cost?'，余额不足':'')};
     }
-    const count=Math.min(fish.bait,20-casts);
-    return {jobs:count?[{...base,kind:'fish-run',action:'pond-fish-n',arg:pond.id+'|'+count,count,before:casts,beforeTotal:fish.total,beforeCaught:fish.caught}]:[],note:progress+(casts>=20?' · 今日已完成':count?' · 待连续钓完 '+count+' 次':' · 鱼饵不足，今日购买已满')};
+    return {jobs:[],note:progress+' · 鱼饵不足，今日购买已满'};
   }
   function fishingPendingDone(p,d){
     if(!p.kind?.startsWith('fish-'))return false;
     if(p.day!==calendar(d.farm,d.now).day)return true;
     const f=d.farm.fishing;if(!f)return false;
     if(p.kind==='fish-bait')return f.day===p.day&&f.bought>=p.before+p.count;
-    // Batch submission is confirmed on the first cast; the game's worker owns the remaining run.
+    // New runs contain one cast. Legacy batches still confirm on the first cast;
+    // their remaining work can only be stopped through the game's own button.
     if(p.kind==='fish-run')return f.total>p.beforeTotal||f.caught>p.beforeCaught||(f.day===p.day&&f.casts>p.before);
     if(p.kind==='fish-reel')return f.caught>p.before;
     return false;

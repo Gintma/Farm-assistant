@@ -7,7 +7,7 @@
   try{const c=JSON.parse(localStorage.getItem('farm-helper.auto-farm-config'));if(R.crops[c?.crop])config.crop=c.crop;if(Number.isInteger(c?.reserve)&&c.reserve>=0&&c.reserve<=100)config.reserve=c.reserve}catch{}
   const handoff=window.__farmHandoff;if(handoff?.farm){config.crop=R.crops[handoff.farm.crop]?handoff.farm.crop:config.crop;config.reserve=handoff.farm.reserve??config.reserve;flags.fields=!!handoff.farm.enabled}
   if(handoff?.automation?.flags)for(const key of Object.keys(flags))if(key in handoff.automation.flags)flags[key]=!!handoff.automation.flags[key];
-  const changedFlags=new Set();
+  const changedFlags=new Set(),stoppedFishBatches=new WeakSet();
   let removed=false,busy=false,epoch=0,lastRead=-Infinity,backoff=0,manualUntil=0,lastGrain='corn';
   let snapshotAt=-Infinity,snapshot=null,owner=null,ledger=null,leaseOwner=null,leasePending=false,leaseRelease=null,storageOK=true;
   let route=null,activeMark=null,needsReview=false,message='选择需要的自动功能',controller=null;
@@ -245,7 +245,7 @@
       route.detail=false;openDock('fields');return false;
     }
     if(job.route==='rwa'){
-      if(panelOpen()&&(gameButton(job.action,job.arg??job.id)||job.kind==='fish-bait'&&gameButton('buy-bait')||job.kind==='fish-run'&&gameButton('pond-fish-n')||job.kind==='craft-start'&&gameButton('craft-start',job.recipe+':1')||job.kind==='craft-eat'&&gameButton('eat-bread')))return true;
+      if(panelOpen()&&(gameButton(job.action,job.arg??job.id)||job.kind==='fish-bait'&&gameButton('buy-bait')||job.kind==='craft-start'&&gameButton('craft-start',job.recipe+':1')||job.kind==='craft-eat'&&gameButton('eat-bread')))return true;
       if(panelOpen()&&click(gameButton('rwa-open',job.id))){route.steps++;return false}
       if(panelOpen()&&click(gameButton('shop','build'))){route.steps++;return false}
       openDock('shop');return false;
@@ -277,13 +277,24 @@
     });
     const result={owner:d.farm.owner,day:W.orderDay(d),at:d.now,terms:M.terms(d),orders};return W.syncBoard(result,d,orderBudget?.left||0);
   }
-  function prepareFishingButton(job){
-    if(job.kind==='fish-run'){
-      const input=document.querySelector('#panel input[data-draft="pond.n"]');
-      if(!visible(input)||input.disabled||Number(input.max)<job.count)return false;
-      input.value=String(job.count);input.dispatchEvent(new Event('input',{bubbles:true}));
+  function stopFullFishing(d,workers){
+    if(!flags.fishing)return false;
+    const q=R.quote(d);if(!q.rewardMultKnown||q.remaining>0)return false;
+    const batch=workers?.jobs.find(j=>j?.type==='fish-all'&&d.farm.structures.some(s=>s.kind==='pond'&&s.id===j.structureId));
+    if(!batch||stoppedFishBatches.has(batch))return false;
+    const stop=gameButton('pond-stop',batch.structureId);
+    if(stop){
+      if(click(stop)){stoppedFishBatches.add(batch);requestCount++;route=null;message='今日收获已满，已请求钓完本条后停止连续钓鱼';activity?.add('submitted',message)}
       return true;
     }
+    // The pond can already be waiting for this fish to finish, or the old
+    // batch has not started yet. Never clear/rewrite the worker's queue.
+    if(panelOpen()&&gameButton('buy-bait'))return false;
+    const job={route:'rwa',id:batch.structureId,action:'pond-stop',arg:batch.structureId};
+    if(route?.key==='rwa:'+batch.structureId&&route.steps>6){message='今日收获已满，未找到连续钓鱼停止按钮，请手动检查';return false}
+    navigate(job);message='今日收获已满，打开钓鱼池检查连续钓鱼停止按钮';return true;
+  }
+  function prepareFishingButton(job){
     if(job.kind!=='fish-bait'||gameButton('buy-bait',job.arg))return true;
     const original=gameButton('buy-bait');if(!original||job.count<1||job.count>20)return false;
     const button=el('button','补购 '+job.count+' 鱼饵 · '+job.cost);button.type='button';button.className='btn small fh-workshop-action';button.dataset.action='buy-bait';button.dataset.arg=job.arg;original.parentElement.append(button);return true;
@@ -354,7 +365,7 @@
     if(job.kind==='craft-order'){budgetAt=-Infinity;W.invalidateBudget(owner)}
     if(job.kind==='craft-buy'){marketAt=-Infinity;market=[]}
     route=null;activeMark=performance.now();
-    message=job.kind==='energy'?'已购买一小包能量，等待确认':'已提交'+({feed:'喂食',collect:'动物收集',orchard:'果园采摘',income:'村庄领取',mine:'矿车收取',oil:'抽油',harvest:'批量收获',plant:'批量播种','craft-buy':'市场采购','craft-start':'作坊加工','craft-take':'成品收取','craft-order':'订单交付','craft-keep':'产物保留设置','craft-eggs':'鸡蛋收取','craft-milk':'牛奶收取','fish-bait':'鱼饵购买','fish-run':'连续钓鱼','fish-reel':'收竿','craft-eat':'面包补能量'}[job.kind]||'农活')+'，等待游戏完成';
+    message=job.kind==='energy'?'已购买一小包能量，等待确认':'已提交'+({feed:'喂食',collect:'动物收集',orchard:'果园采摘',income:'村庄领取',mine:'矿车收取',oil:'抽油',harvest:'批量收获',plant:'批量播种','craft-buy':'市场采购','craft-start':'作坊加工','craft-take':'成品收取','craft-order':'订单交付','craft-keep':'产物保留设置','craft-eggs':'鸡蛋收取','craft-milk':'牛奶收取','fish-bait':'鱼饵购买','fish-run':'单竿钓鱼','fish-reel':'收竿','craft-eat':'面包补能量'}[job.kind]||'农活')+'，等待游戏完成';
     return true;
   }
   async function verifyPurchase(job,d,generation){
@@ -399,6 +410,7 @@
         }
       }
       if(needsReview){message='等待手动检查农活队列';return}
+      if(stopFullFishing(d,workers))return;
       if(!workers){message='无法确认每位农夫状态，请等待游戏加载';return}
       if(!workers.idle){
         if(workers.building>=workers.total)message='所有农夫都在施工，等待空闲农夫';
@@ -491,7 +503,7 @@
   const feedDetails=el('details'),fs=el('summary','金币饲料设置');feedDetails.append(fs);check(feedDetails,'允许金币购买饲料','feedGold',true);number(feedDetails,'每日金币喂养限额','feedBudget',0,1000000);note(feedDetails,null,'包含当天手动金币喂养；0 表示禁止花金币。只用游戏自动补饲料，不去玩家市场购买。');animal.append(feedDetails);
   const daily=el('section');daily.id='farm-daily-controls';sections.daily=daily;
   for(const [key,label,text]of [['income','自动领取村庄收入','约每小时领取，避免满仓'],['mine','自动收取矿车','两车一起收；不出售金银'],['oil','自动抽取石油','每天一次；不出售石油']]){check(daily,label,key);note(daily,key,text)}
-  check(daily,'每天买满20鱼饵并连续钓完','fishing');note(daily,'fishing','含当天手动购买；按游戏报价花金币。满额后鱼进鱼箱，不自动卖鱼或切饲料。');
+  check(daily,'自动钓鱼（收获满额即停）','fishing');note(daily,'fishing','每天最多20竿，先用剩余鱼饵；不足时按游戏报价补购，含手动购买。逐竿检查额度，满额不再买饵或抛竿；已抛出的本竿正常收尾。');
   const ed=el('details'),es=el('summary','能量补购设置');ed.append(es);check(ed,'允许自动购买能量','energy');number(ed,'每日能量购买限额','energyBudget',0,1000000);note(ed,null,'只补 10 点小包；需有可估算的新增收益。未开启或限额为 0 时不购买。');daily.append(ed);
   const workshop=el('section');workshop.id='farm-workshop-controls';sections.workshop=workshop;
   check(workshop,'自动作坊与订单','workshop');
@@ -552,6 +564,7 @@
       if(cropTimes.length){title='等待作物成熟';const minutes=Math.max(1,Math.ceil(Math.min(...cropTimes)/60000));nextText='下批作物约 '+(minutes>=60?Math.floor(minutes/60)+' 小时 '+minutes%60+' 分钟':minutes+' 分钟')+'后可收';reason='当前没有可立即执行的农务'}
 if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/羊毛/.test(reason)?'等待羊毛':/牛奶/.test(reason)?'等待牛奶':/鸡蛋/.test(reason)?'等待鸡蛋':/小麦/.test(reason)?'等待小麦':/加工/.test(reason)?'作坊加工中':title}
     }
+    if(status==='waiting'&&!lastPlan.jobs.length&&flags.fishing&&!enabled.some(k=>!['fishing','energy'].includes(k))){title='钓鱼等待';reason=lastPlan.hint.fishing||message;nextText=snapshot&&R.quote(snapshot).remaining<=0?'收获额度恢复后继续，保留鱼饵与开关':'额度允许时继续，每天最多20竿'}
     if(status==='waiting'&&lastWorkers&&lastWorkers.idle===0){title='等待空闲农夫';reason=message;nextText='有农夫空闲后重新安排农活；不清空或搬动已有队列'}
     return {status,title,reason,items,next:nextText,rows,enabled:enabled.length,age:snapshot?Math.max(0,Math.floor((now-lastRead)/1000)):null};
   }
