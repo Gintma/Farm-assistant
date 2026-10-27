@@ -1,0 +1,13 @@
+.DS_Store
+__pycache__/
+*.pyc
+dist/
+*.log
+.env
+.env.*
+*.pem
+*.key
+*manual-baseline*.json
+*assistant-test*.json
+*quick-battle-test*.json
+*battle-network*.json

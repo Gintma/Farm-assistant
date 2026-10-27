@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "农耕战斗助手",
+  "version": "1.20.0",
+  "description": "当前游戏页的战斗、田地、动物、作坊与日常农务助手；花金币需手动开启并设置每日预算。",
+  "permissions": [
+    "activeTab",
+    "debugger",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "打开战斗助手",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://farmingseason.io/*"
+      ],
+      "js": [
+        "auto-start.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

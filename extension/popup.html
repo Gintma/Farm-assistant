@@ -1,0 +1,12 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>农耕战斗助手</title>
+<style>body{width:260px;margin:0;padding:16px;font:13px/1.6 system-ui;color:#213d2a;background:#eff5ef}h1{font-size:15px;margin:0 0 10px}button{width:100%;padding:9px;border:0;border-radius:5px;background:#2c6540;color:white;font:inherit;cursor:pointer}button+button{margin-top:8px;background:#d9e6da;color:#213d2a}button:disabled{opacity:.55;cursor:wait}p{font-size:11px;color:#526958;margin:10px 0 0}#status{white-space:pre-wrap;font-size:12px;overflow-wrap:anywhere}</style>
+<h1>农耕战斗助手</h1><button id="start">开启助手</button><button id="remove">移除助手</button>
+<p><label><input type="checkbox" id="auto"> 刷新后自动显示助手</label></p>
+<p id="status" role="status">刷新后自动显示；农务恢复原设置，战斗需手动开启。</p>
+<p>启动后先检查游戏版本；发现代码更新时暂停，需人工确认兼容。测试记录期间会持续显示调试提示。</p>
+<details style="margin-top:12px"><summary>测试记录</summary>
+<p>手动对照会关闭自动功能；助手测试保留原有开关。只记录本页战斗与农务操作接口，30分钟或300条后停止，不记录登录和钱包接口。</p>
+<button id="capture-assistant">开始助手测试记录</button><button id="capture-start">开始手动对照记录</button><button id="capture-stop">停止记录</button><button id="capture-export">导出脱敏记录</button><button id="capture-clear">清空记录</button>
+<p>停止记录只结束采集；助手测试中的自动功能仍按原开关运行。导出文件会标明测试类型。</p>
+<p id="capture-status" role="status">尚未开始</p></details>
+<script src="popup.js"></script></html>
