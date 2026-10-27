@@ -10,7 +10,7 @@ const q=R.quote(d);d.farm.harvestCarry=q.base*7;d.farm.today.harvestEarned=q.cap
 d=make();d.farm.structures=[{id:'o',kind:'orchard',slots:[{tree:'orange',lastHarvestAt:d.now-86400001},{tree:'lemon',lastHarvestAt:d.now-86400001}]}];assert.equal(R.orchardPlan(d)[0].ready.length,2);
 d.farm.fields=[{id:'blank',crop:null}];d.farm.today.harvestEarned=R.quote(d).cap;const config={crop:'turnip',smart:true,feedDays:2};assert.equal(R.chooseCrop(d,config,{}).crop,null);
 d.farm.animals=[{id:'a',kind:'chicken',meals:1,fedWindows:[]}];assert.equal(R.chooseCrop(d,config,{}).crop,'wheat');d.farm.silo.feed=8;assert.equal(R.chooseCrop(d,config,{}).crop,null);
-d.farm.today.harvestEarned=0;assert.equal(R.chooseCrop(d,config,{}).crop,'turnip');d.farm.harvestCarry=R.quote(d).base;assert.equal(R.chooseCrop(d,config,{}).crop,null);
+d.farm.today.harvestEarned=0;assert.equal(R.chooseCrop(d,config,{}).crop,'turnip');d.farm.harvestCarry=R.quote(d).base;assert.equal(R.chooseCrop(d,config,{}).crop,'turnip');
 d=make();d.farm.fields=[{id:'a',crop:'turnip',plantedAt:100}];const pending={kind:'harvest',before:[{id:'a',crop:'turnip',plantedAt:100}]};assert.equal(R.pendingDone(pending,d),false);d.farm.fields[0].crop=null;assert.equal(R.pendingDone(pending,d),true);
 d.farm.today.bought=10;assert.equal(R.pendingDone({kind:'energy',before:100,bought:0},d),true);d.price.pay=0;assert.throws(()=>R.quote(d));
 // NFT cap expansion is separate from yield, bank bonus, feed reimbursement and carry storage.
@@ -23,3 +23,14 @@ d.farm.nft={on:false,lockDays:28};assert.equal(R.quote(d).cap,20260);assert.equa
 d.farm.nft={on:true,token:123,lockDays:0};assert.equal(R.quote(d).cap,20260);assert.equal(R.quote(d).nftYieldBonus,1);
 d.farm.nft={on:true,lockDays:28};d.farm.animals=[{id:'c',kind:'cow',productReady:true}];d.farm.structures=[{id:'barn',kind:'barn'}];assert.equal(R.collectPlan(d).value,R.quote(d).value(.16));
 console.log('PASS: farm-local meals/day rollover; per-building energy; silo auto-mix and paid-feed quotes; cap/carry protection; grain stock; production reservation; completion markers');
+
+// Never substitute forecasts or workshop reserves for paid harvest progress.
+ctx.window.__farmWorkshop={feedWheat:()=>12};
+for(const level of [1,2,3,4,5])for(const mult of [.05,.5,1])for(const smart of [false,true])for(const nft of [false,true]){
+ d=make();d.farm.level=level;d.price.mult=mult;d.farm.nft={on:nft,lockDays:28};d.farm.harvestCarry=R.quote(d).base*7;d.farm.fields=[{id:'f',crop:'turnip',plantedAt:d.now-1800001}];d.farm.today.harvestEarned=R.quote(d).cap-1;
+ const conf={crop:'turnip',smart,feedDays:1,workshopWheat:100};let choice=R.chooseCrop(d,conf,{workshop:true});assert.equal(choice.crop,'turnip');assert.match(choice.message,/今日收获未满/);
+ for(const crop of ['wheat','corn'])assert.equal(R.chooseCrop(d,{...conf,crop},{workshop:true}).crop,crop);
+ d.farm.today.harvestEarned=R.quote(d).cap;assert.equal(R.chooseCrop(d,conf,{workshop:true}).crop,'wheat');
+ assert.equal(R.chooseCrop(d,{...conf,marketBuy:true,smart:true},{workshop:true}).crop,null,'market order sourcing does not force wheat planting');
+}
+d=make();d.price.mult=.05;d.farm.today.harvestEarned=R.quote(d).cap;assert.equal(R.chooseCrop(d,config,{}).crop,null);d.price.mult=1;assert.equal(R.chooseCrop(d,config,{}).crop,'turnip','restored payout cap resumes cash crops');

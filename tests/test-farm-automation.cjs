@@ -26,7 +26,7 @@ async function boot(sharedStore=new Map(),versionGuard=null){
  const storage={getItem:k=>sharedStore.get(k)??null,setItem:(k,v)=>{if(failStore)throw Error('blocked');sharedStore.set(k,v)}};
  const context={window:win,document:doc,navigator:{locks:{request:async(name,opts,fn)=>fn({name})}},localStorage:storage,getComputedStyle:()=>({visibility:'visible'}),performance:{now:()=>ms},AbortController,
  fetch:async()=>{fetches++;if(hold)await hold;d.now=start+ms;return{ok:true,json:async()=>structuredClone(d)}},setInterval:fn=>(intervals.push(fn),intervals.length),clearInterval(){},setTimeout:()=>1,clearTimeout(){}};
- vm.runInNewContext(fs.readFileSync('src/activity-store.js','utf8'),context);vm.runInNewContext(rules,context);vm.runInNewContext(fs.readFileSync('src/workshop-rules.js','utf8'),context);vm.runInNewContext(engine,context);const flush=()=>new Promise(setImmediate);await flush();
+ vm.runInNewContext(fs.readFileSync('src/activity-store.js','utf8'),context);vm.runInNewContext(rules,context);vm.runInNewContext(fs.readFileSync('src/workshop-rules.js','utf8'),context);vm.runInNewContext(fs.readFileSync('src/market-rules.js','utf8'),context);vm.runInNewContext(engine,context);const flush=()=>new Promise(setImmediate);await flush();
  const api=win.__farmAutomation;
  return{api,d,doc,events,clicks,context,el,action,setPanel:v=>panel=v,panel:()=>panel,store:sharedStore,flush,gameButtons,step:async(n=1,delta=5000)=>{for(let i=0;i<n;i++){ms+=delta;intervals.forEach(fn=>fn());await flush()}},queue:v=>queue=v,verify:v=>verification=v,modal:v=>modal=v,failStore:v=>failStore=v,reads:()=>fetches,hold:v=>hold=v};
 }

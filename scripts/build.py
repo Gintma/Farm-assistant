@@ -5,11 +5,11 @@ import zipfile
 root = Path(__file__).resolve().parents[1]
 bot = root / 'src'
 ext = root / 'extension'
-version = '1.20.4'
+version = '1.20.5'
 modules = [
     'battle-planner.js', 'version-guard.js', 'activity-store.js',
     'verification-guard.js', 'farm-rules.js', 'workshop-rules.js',
-    'farm-automation.js', 'earnings-progress.js', 'combat-controller.js',
+    'market-rules.js', 'farm-automation.js', 'earnings-progress.js', 'combat-controller.js',
     'combat-input.js', 'combat-goal.js', 'combat-perks.js', 'combat-return.js',
     'compact-panel.js', 'panel-layout.js',
 ]

@@ -76,20 +76,23 @@
   function chooseCrop(d,config,flags,lastGrain='corn'){
     const f=d.farm,q=quote(d);
     if(!crops[config.crop])throw Error('未知作物');
-    if(flags.workshop&&config.workshopWheat>0){
+    const progress='已得 '+f.today.harvestEarned.toLocaleString('zh-CN',{maximumFractionDigits:2})+' / '+q.cap.toLocaleString('zh-CN',{maximumFractionDigits:2})+' 金币';
+    // Uncollected produce, stored carry and tomorrow's raw materials do not
+    // count as today's paid harvest. Only actual remaining allowance gates grain.
+    if(q.remaining>1e-6){
+      const grain=['wheat','corn'].includes(config.crop);
+      return {crop:config.crop,message:(grain?'按你选择的粮食种植；今日收获尚未满额':'今日收获未满，优先种'+crops[config.crop].name)+'（'+progress+'）'};
+    }
+    if(flags.workshop&&!config.marketBuy&&config.workshopWheat>0){
       const need=window.__farmWorkshop.feedWheat(d,config.feedDays)+config.workshopWheat;
       const wheat=(f.silo?.wheat||0)+f.fields.filter(x=>x.crop==='wheat').length;
-      if(wheat<need)return {crop:'wheat',message:'补足作坊小麦，另留动物饲料'};
+      if(wheat<need)return {crop:'wheat',message:'今日收获已满，补作坊小麦并保留动物饲料（'+progress+'）'};
     }
-    const needsCash=q.remaining>q.carry+futureValue(d,flags)+1;
-    if(!config.smart&&!q.remaining||config.smart&&!needsCash){
-      const need=f.animals.reduce((n,a)=>n+(animals[a.kind]?.bags||0)*2,0);
-      const inventory=(f.silo?.feed||0)+Math.min((f.silo?.wheat||0)+f.fields.filter(x=>x.crop==='wheat').length,(f.silo?.corn||0)+f.fields.filter(x=>x.crop==='corn').length)*10;
-      if(config.smart&&(need===0||inventory>=need*config.feedDays))return {crop:null,message:'预计产出已覆盖今日额度，粮食充足，等待下一天'};
-      const wheat=(f.silo?.wheat||0)+f.fields.filter(x=>x.crop==='wheat').length,corn=(f.silo?.corn||0)+f.fields.filter(x=>x.crop==='corn').length;
-      return {crop:wheat<corn?'wheat':corn<wheat?'corn':lastGrain==='corn'?'wheat':'corn',message:'补充玉米和小麦'};
-    }
-    return {crop:config.crop,message:'补足今日收获额度'};
+    const need=f.animals.reduce((n,a)=>n+(animals[a.kind]?.bags||0)*2,0);
+    const inventory=(f.silo?.feed||0)+Math.min((f.silo?.wheat||0)+f.fields.filter(x=>x.crop==='wheat').length,(f.silo?.corn||0)+f.fields.filter(x=>x.crop==='corn').length)*10;
+    if(config.smart&&(need===0||inventory>=need*config.feedDays))return {crop:null,message:'今日收获已满，粮食充足，等待下一天（'+progress+'）'};
+    const wheat=(f.silo?.wheat||0)+f.fields.filter(x=>x.crop==='wheat').length,corn=(f.silo?.corn||0)+f.fields.filter(x=>x.crop==='corn').length;
+    return {crop:wheat<corn?'wheat':corn<wheat?'corn':lastGrain==='corn'?'wheat':'corn',message:'今日收获已满，补充玉米和小麦（'+progress+'）'};
   }
   // Server counters, not a local click count, enforce the daily 20-bait/cast limits.
   function fishingPlan(d){
