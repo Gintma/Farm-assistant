@@ -45,7 +45,7 @@ class CombatTests(unittest.TestCase):
 class EconomyTests(unittest.TestCase):
     def test_economic_regressions(self):
         for name in ('test-farm-rules.cjs', 'test-farm-automation.cjs', 'test-workshop.cjs',
-                     'test-fishing.cjs', 'test-earnings-progress.cjs', 'test-reward-mult.cjs',
+                     'test-fishing.cjs', 'test-juice.cjs', 'test-earnings-progress.cjs', 'test-reward-mult.cjs',
                      'test-multi-worker.cjs', 'test-market.cjs', 'test-compatibility.cjs', 'test-version-guard.cjs', 'test-panel-layout.cjs'):
             with self.subTest(suite=name):
                 result = run('node', str(ROOT / 'tests' / name), cwd=ROOT)

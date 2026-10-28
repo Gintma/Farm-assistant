@@ -3,7 +3,7 @@ const {boot}=require('./test-farm-automation.cjs');
 const ctx={window:{}};
 for(const file of ['farm-rules.js','workshop-rules.js'])vm.runInNewContext(fs.readFileSync('src/'+file,'utf8'),ctx);
 const W=ctx.window.__farmWorkshop,R=ctx.window.__farmRules;
-const make=()=>({owner:'test',access:{open:true},now:Date.parse('2026-10-23T03:00:00Z'),price:{pay:.0004,charge:.0004},farm:{owner:'test',level:4,tz:480,tokens:100000,today:{day:'2026-10-23',energy:30,harvestEarned:21000,breadEnergy:0},fields:[],animals:[],structures:[{id:'m',kind:'mill'},{id:'b',kind:'bakery'}],pantry:{},silo:{wheat:30,corn:30,feed:0},harvestCarry:0}});
+const make=()=>({owner:'test',access:{open:true},now:Date.parse('2026-10-23T03:00:00Z'),price:{pay:.0004,charge:.0004},farm:{owner:'test',level:4,tz:480,tokens:100000,today:{day:'2026-10-23',energy:30,harvestEarned:21000,breadEnergy:0},fields:[],animals:[],structures:[{id:'m',kind:'mill'},{id:'b',kind:'bakery'},{id:'base-coop',kind:'coop'}],pantry:{},silo:{wheat:30,corn:30,feed:0},harvestCarry:0}});
 const fixture=[{index:0,items:{egg:3},reward:945,done:false},{index:1,items:{bread:6,flour:5},reward:1989,done:false},{index:2,items:{egg:6,bread:8},reward:3285,done:false}];
 const config={feedDays:2,workshopEat:true};
 let d=make(),board={owner:'test',day:'2026-10-23',orders:fixture};
@@ -49,7 +49,7 @@ async function workshopBoot(store,orderRows=fixture){
  b.context.fetch=async url=>url==='/api/farm/order'?{ok:true,json:async()=>({budget:{left:budget,total:100000}})}:baseFetch(url);
  return {...b,budget:v=>budget=v,unknown:v=>unknown=v};
 }
-(async()=>{
+if(require.main===module)(async()=>{
  let b=await workshopBoot();assert.equal(b.api.status().flags.workshop,false);b.api.configure('workshopEat',false);b.api.set('workshop',true);await b.step(6);
  assert.ok(b.clicks.includes('order-fill:0'));assert.equal(b.clicks.filter(x=>x==='order-fill:0').length,1);assert.ok(b.api.status().pending||b.d.farm.orders.done.length);b.api.remove();
  b=await workshopBoot();b.budget(0);b.api.configure('workshopEat',false);b.api.set('workshop',true);await b.step(6);assert.ok(b.clicks.includes('order-fill:0'));assert.equal(b.clicks.filter(x=>x==='order-fill:0').length,1);assert.ok(!/暂停交单/.test(b.api.execution().reason));b.api.remove();
@@ -97,3 +97,5 @@ async function workshopBoot(store,orderRows=fixture){
  assert.ok(b.api.execution().rows.some(r=>r.label==='次日备货'&&r.text.includes('2026-10-24')));assert.ok(!b.clicks.some(x=>x.startsWith('order-fill:')),'tomorrow previews never send speculative order submissions');b.api.remove();
  console.log('PASS: exact order requirements; reserve feed wheat and direct-order ingredients; queued output counted; no overproduction; star-only/partial-reward production and delivery; midnight isolation; markers; actual board parsing and normal-button delivery; verification pause');
 })().catch(e=>{console.error(e);process.exitCode=1});
+
+module.exports={workshopBoot};

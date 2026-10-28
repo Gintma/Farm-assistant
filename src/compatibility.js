@@ -23,13 +23,14 @@
     const before=describe(approved);return before!==null&&before===describe(result);
   }
   const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v),num=v=>typeof v==='number'&&Number.isFinite(v);
+  const orderCount=()=>window.__farmWorkshop?.orderCount?.()??(window.__FS_CRAFT__===true&&(window.__FS_CRAFT2__===true||Array.isArray(window.__FS_CRAFT2__)&&window.__FS_CRAFT2__.includes('press'))?4:3);
   function request(path,body){
     const scope=path.includes('/battle/')?'battle':path.includes('/market/')?'market':path.endsWith('/order')?'workshop':'farm',id='request:'+path;
     let data;try{data=typeof body==='string'&&body.length<=1048576?JSON.parse(body):null}catch{}
     if(!object(data)){fail(id,scope,'操作请求不再是可确认的 JSON 对象');return}
     let allowed,required;
     if(path.endsWith('/market/buy')){allowed=['id','qty','px'];required=typeof data.id==='string'&&num(data.qty)&&Number.isInteger(data.qty)&&data.qty>0}
-    else if(path.endsWith('/order')){allowed=['i','px'];required=Number.isInteger(data.i)&&data.i>=0&&data.i<3}
+    else if(path.endsWith('/order')){allowed=['i','px'];required=Number.isInteger(data.i)&&data.i>=0&&data.i<orderCount()}
     else if(path.endsWith('/battle/start')){allowed=['quick','px'];required=data.quick===undefined||typeof data.quick==='boolean'}
     else if(path.endsWith('/battle/end')){allowed=['run','wave','kills','earned','seconds','died','stats','dbg','px'];required=typeof data.run==='string'&&['wave','kills','earned','seconds'].every(k=>num(data[k]))&&typeof data.died==='boolean'&&object(data.stats)&&(data.dbg===undefined||object(data.dbg));
       if(required&&Object.keys(data.stats).some(k=>!['hits','dodges','tamper','sig'].includes(k))){fail(id,scope,'战斗统计字段发生变化');return}}

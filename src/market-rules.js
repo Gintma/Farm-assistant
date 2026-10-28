@@ -1,8 +1,8 @@
 /* Authorize purchases against one actual order, including its sunk costs. */
 (() => {
   const R=window.__farmRules,W=window.__farmWorkshop;
-  const names={bread:'面包',flour:'面粉',egg:'鸡蛋',wheat:'小麦',milk:'牛奶',butter:'黄油',cheese:'奶酪',wool:'羊毛',cloth:'布料'};
-  const items=Object.keys(names),outputs=['bread','flour','butter','cheese','cloth'];
+  const names={fruit:'水果',juice:'果汁',bread:'面包',flour:'面粉',egg:'鸡蛋',wheat:'小麦',milk:'牛奶',butter:'黄油',cheese:'奶酪',wool:'羊毛',cloth:'布料'};
+  const items=Object.keys(names),outputs=['bread','flour','butter','cheese','cloth','juice'];
   function listings(data){
     if(!Array.isArray(data?.listings))throw Error('市场报价格式变化，暂停购买');
     return data.listings.filter(x=>x&&items.includes(x.item)&&!x.mine&&typeof x.id==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(x.id)&&Number.isSafeInteger(x.qty)&&x.qty>0&&Number.isSafeInteger(x.price)&&x.price>0&&Number.isFinite(x.exp));
@@ -26,24 +26,26 @@
       for(const row of by[k]){const n=Math.min(left,row.qty);if(n){buys.push({...row,count:n});cost+=n*row.price;left-=n}if(!left)break}
       const result=left?null:{cost,buys};memo[k].set(count,result);return result;
     };
-    const buildings={};for(const k of ['mill','bakery','dairy','loom']){const b=f.structures.find(s=>s.kind===k&&R.built(s,d.now));if(b)buildings[k]={b,start:Math.max(d.now,...(b.queue||[]).map(q=>q.until)),slots:Math.max(0,8-(b.queue||[]).filter(q=>q.until>d.now).length)}}
-    const max=(recipe,need)=>{const r=W.recipes[recipe],b=buildings[r.building],closed=window.__FS_CRAFT__===false||['butter','cheese'].includes(recipe)&&window.__FS_DAIRY__===false||recipe==='cloth'&&window.__FS_CRAFT2__===false;return !b||closed?0:Math.max(0,Math.min(Math.ceil(Math.max(0,need-stock[recipe])/r.count),b.slots,Math.floor((deadline-60000-b.start)/r.ms),Math.floor((200-stock[recipe])/r.count)))};
-    const limits={bread:max('bread',target.bread),butter:max('butter',target.butter),cheese:max('cheese',target.cheese),cloth:max('cloth',target.cloth)};
+    const buildings={};for(const k of ['mill','bakery','dairy','loom','press']){const b=f.structures.find(s=>s.kind===k&&R.built(s,d.now));if(b)buildings[k]={b,start:Math.max(d.now,...(b.queue||[]).map(q=>q.until)),slots:Math.max(0,8-(b.queue||[]).filter(q=>q.until>d.now).length)}}
+    const max=(recipe,need)=>{const r=W.recipes[recipe],b=buildings[r.building],closed=window.__FS_CRAFT__===false||['butter','cheese'].includes(recipe)&&window.__FS_DAIRY__===false||recipe==='cloth'&&window.__FS_CRAFT2__===false||recipe==='juice'&&!R.craftOpen('press');return !b||closed?0:Math.max(0,Math.min(Math.ceil(Math.max(0,need-stock[recipe])/r.count),b.slots,Math.floor((deadline-60000-b.start)/r.ms),Math.floor((200-stock[recipe])/r.count)))};
+    const limits={bread:max('bread',target.bread),butter:max('butter',target.butter),cheese:max('cheese',target.cheese),cloth:max('cloth',target.cloth),juice:max('juice',target.juice)};
     let best=null;
     // Outputs are chosen first; their inputs are then reserved together. This
     // avoids counting the same milk, egg or flour for two different uses.
-    for(let bread=0;bread<=limits.bread;bread++)for(let flour=0;flour<=max('flour',target.flour+bread);flour++)for(let butter=0;butter<=limits.butter;butter++)for(let cheese=0;cheese<=limits.cheese;cheese++)for(let cloth=0;cloth<=limits.cloth;cloth++){
+    for(let bread=0;bread<=limits.bread;bread++)for(let flour=0;flour<=max('flour',target.flour+bread);flour++)for(let butter=0;butter<=limits.butter;butter++)for(let cheese=0;cheese<=limits.cheese;cheese++)for(let cloth=0;cloth<=limits.cloth;cloth++)for(let juice=0;juice<=limits.juice;juice++){
       if(butter+cheese>(buildings.dairy?.slots||0))continue;
       const millEnd=(buildings.mill?.start||d.now)+flour*600000;
       const bakeryEnd=Math.max(buildings.bakery?.start||d.now,flour?millEnd:d.now)+bread*1800000;
       const dairyEnd=(buildings.dairy?.start||d.now)+butter*3600000+cheese*7200000;
       const loomEnd=(buildings.loom?.start||d.now)+cloth*7200000;
+      const pressEnd=(buildings.press?.start||d.now)+juice*2400000;
+      if(juice&&pressEnd>deadline-60000)continue;
       if(bread&&bakeryEnd>deadline-60000||butter+cheese&&dairyEnd>deadline-60000||cloth&&loomEnd>deadline-60000)continue;
-      const required={...target,flour:target.flour+bread,egg:target.egg+bread,milk:target.milk+butter+2*cheese,wool:target.wool+2*cloth,wheat:target.wheat+flour};
-      const counts={bread,flour,butter,cheese,cloth};let cost=0;const buys=[];
+      const required={...target,flour:target.flour+bread,egg:target.egg+bread,milk:target.milk+butter+2*cheese,wool:target.wool+2*cloth,wheat:target.wheat+flour,fruit:target.fruit+2*juice};
+      const counts={bread,flour,butter,cheese,cloth,juice};let cost=0;const buys=[];
       for(const k of items){const n=Math.max(0,required[k]-stock[k]-(counts[k]||0)*(W.recipes[k]?.count||1)),offer=purchase(k,n);if(!offer){cost=Infinity;break}cost+=offer.cost;if(cost>budget){cost=Infinity;break}buys.push(...offer.buys)}
       if(!Number.isFinite(cost))continue;
-      const energy=Object.values(counts).filter(Boolean).length*2,energyCost=energy*energyUnit,score=cost+energyCost,finish=Math.max(d.now,flour?millEnd:0,bread?bakeryEnd:0,butter+cheese?dairyEnd:0,cloth?loomEnd:0);
+      const energy=Object.values(counts).filter(Boolean).length*2,energyCost=energy*energyUnit,score=cost+energyCost,finish=Math.max(d.now,flour?millEnd:0,bread?bakeryEnd:0,butter+cheese?dairyEnd:0,cloth?loomEnd:0,juice?pressEnd:0);
       if(!best||score<best.score||score===best.score&&(cost<best.cost||cost===best.cost&&finish<best.finish))best={cost,energy,energyCost,score,finish,buys,counts};
     }
     return best;
@@ -51,17 +53,17 @@
   const margin=.10;
   const signature=o=>JSON.stringify(Object.entries(o.items).sort(([a],[b])=>a.localeCompare(b)));
   const key=(day,index)=>day+'#'+index;
-  const terms=d=>{const q=R.quote(d);return JSON.stringify([d.farm.level,d.price.pay,d.price.mult,q.bonus,q.nftCapBonus,q.nftYieldBonus])};
+  const terms=d=>{const q=R.quote(d);return JSON.stringify([d.farm.level,d.price.pay,d.price.mult,q.bonus,q.nftCapBonus,q.nftYieldBonus,W.orderCount()])};
   function initialize(d,ledger){
     ledger.orderCosts??={};
     if(!ledger.orderCosts||typeof ledger.orderCosts!=='object'||Array.isArray(ledger.orderCosts))throw Error('订单成本记录异常，已暂停');
-    for(const [k,c]of Object.entries(ledger.orderCosts))if(!/^\d{4}-\d{2}-\d{2}#[0-2]$/.test(k)||!c||typeof c.signature!=='string'||!Number.isSafeInteger(c.cash)||c.cash<0||!Number.isSafeInteger(c.energy)||c.energy<0||!Number.isFinite(c.energyCost)||c.energyCost<0)throw Error('订单成本记录异常，已暂停');
+    for(const [k,c]of Object.entries(ledger.orderCosts))if(!/^\d{4}-\d{2}-\d{2}#[0-3]$/.test(k)||!c||typeof c.signature!=='string'||!Number.isSafeInteger(c.cash)||c.cash<0||!Number.isSafeInteger(c.energy)||c.energy<0||!Number.isFinite(c.energyCost)||c.energyCost<0)throw Error('订单成本记录异常，已暂停');
     const day=W.orderDay(d);
     if(!ledger.marketLegacy){const assigned=Object.entries(ledger.orderCosts).filter(([k])=>k.startsWith(day+'#')).reduce((n,[,c])=>n+c.cash,0);ledger.marketLegacy={day,cash:Math.max(0,(ledger.marketSpent||0)-assigned)}}
     if(typeof ledger.marketLegacy.day!=='string'||!Number.isSafeInteger(ledger.marketLegacy.cash)||ledger.marketLegacy.cash<0)throw Error('旧版采购记录异常，已暂停');
     const active=ledger.activeMarketOrder;
     if(active&&(!ledger.orderCosts[key(active.day,active.index)]||ledger.orderCosts[key(active.day,active.index)].signature!==active.signature))throw Error('订单投入记录不完整，已暂停');
-    if(active&&(typeof active.day!=='string'||!Number.isInteger(active.index)||active.index<0||active.index>2||typeof active.signature!=='string'))throw Error('待完成订单记录异常，已暂停');
+    if(active&&(typeof active.day!=='string'||!Number.isInteger(active.index)||active.index<0||active.index>3||typeof active.signature!=='string'))throw Error('待完成订单记录异常，已暂停');
   }
   function reconcile(d,ledger){
     const day=W.orderDay(d),active=ledger.activeMarketOrder;let changed=false;
@@ -136,7 +138,7 @@
     const f=d.farm,available={};for(const k of items)available[k]=Math.max(0,W.stock(f,k)-(result.target[k]||0));
     available.wheat=Math.max(0,available.wheat-result.feedReserve);
     const counts=result.selected.counts,jobs=[],extra=!Object.values(counts).some(Boolean);
-    for(const recipe of ['flour','bread','butter','cheese','cloth']){
+    for(const recipe of ['flour','bread','butter','cheese','cloth','juice']){
       const r=W.recipes[recipe],s=f.structures.find(b=>b.kind===r.building&&R.built(b,d.now));if(!s)continue;
       // Once order stock is covered, spare inventory may still make the usual
       // energy bread. Never buy its ingredients or take reserved order stock.

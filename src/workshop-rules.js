@@ -1,19 +1,22 @@
 /* Today's visible orders are authoritative. Forecasts are used only for next-day stock. */
 (() => {
   const R=window.__farmRules;
-  const recipes={flour:{building:'mill',inputs:{wheat:1},count:1,ms:600000},bread:{building:'bakery',inputs:{flour:1,egg:1},count:4,ms:1800000},butter:{building:'dairy',inputs:{milk:1},count:1,ms:3600000},cheese:{building:'dairy',inputs:{milk:2},count:1,ms:7200000},cloth:{building:'loom',inputs:{wool:2},count:1,ms:7200000}};
-  const values={egg:.04,flour:.024,bread:.0225,wheat:.02,milk:.16,butter:.19,cheese:.38,wool:.3,cloth:.75};
-  const names={egg:'鸡蛋',milk:'牛奶',wheat:'小麦',mill:'磨坊',bakery:'面包房',dairy:'乳品坊',loom:'织布坊',flour:'面粉',bread:'面包',butter:'黄油',cheese:'奶酪',wool:'羊毛',cloth:'布料'};
+  const recipes={flour:{building:'mill',inputs:{wheat:1},count:1,ms:600000},bread:{building:'bakery',inputs:{flour:1,egg:1},count:4,ms:1800000},butter:{building:'dairy',inputs:{milk:1},count:1,ms:3600000},cheese:{building:'dairy',inputs:{milk:2},count:1,ms:7200000},juice:{building:'press',inputs:{fruit:2},count:1,ms:2400000},cloth:{building:'loom',inputs:{wool:2},count:1,ms:7200000}};
+  const values={fruit:.053,juice:.1325,egg:.04,flour:.024,bread:.0225,wheat:.02,milk:.16,butter:.19,cheese:.38,wool:.3,cloth:.75};
+  const names={fruit:'水果',juice:'果汁',press:'压榨坊',egg:'鸡蛋',milk:'牛奶',wheat:'小麦',mill:'磨坊',bakery:'面包房',dairy:'乳品坊',loom:'织布坊',flour:'面粉',bread:'面包',butter:'黄油',cheese:'奶酪',wool:'羊毛',cloth:'布料'};
   const stock=(f,key)=>Math.max(0,Math.floor((key==='wheat'?f.silo:f.pantry)?.[key]||0));
-  const orderPool=[['flour',[3,5,8]],['bread',[4,6,8]],['egg',[3,4,6]],['milk',[1,2,3]],['butter',[1,2,3]],['cheese',[1,1,2]],['cloth',[1,1,2]]];
+  const orderPool=[['flour',[3,5,8]],['bread',[4,6,8]],['egg',[3,4,6]],['milk',[1,2,3]],['butter',[1,2,3]],['cheese',[1,1,2]],['juice',[1,2,3]],['cloth',[1,1,2]]];
+  const orderCount=()=>R.craftOpen('press')?4:3;
   function forecast(owner,day){
     if(typeof owner!=='string'||!owner||!/^\d{4}-\d{2}-\d{2}$/.test(day))throw Error('账号或订单日期无法确认');
     const craft2=window.__FS_CRAFT2__;
-    if(window.__FS_CRAFT__!==true||typeof window.__FS_DAIRY__!=='boolean'||!(craft2===false||Array.isArray(craft2)&&craft2.every(k=>k==='loom')))throw Error('作坊开放范围变化，暂停预测备货');
-    const pool=orderPool.filter(([k])=>!['milk','butter','cheese'].includes(k)||window.__FS_DAIRY__).filter(([k])=>k!=='cloth'||Array.isArray(craft2)&&craft2.includes('loom'));
+    if(window.__FS_CRAFT__!==true||typeof window.__FS_DAIRY__!=='boolean'||!(craft2===false||Array.isArray(craft2)&&craft2.every(k=>['loom','press'].includes(k))))throw Error('作坊开放范围变化，暂停预测备货');
+    const pool=orderPool.filter(([k])=>!['milk','butter','cheese'].includes(k)||window.__FS_DAIRY__).filter(([k])=>k!=='cloth'||Array.isArray(craft2)&&craft2.includes('loom')).filter(([k])=>k!=='juice'||R.craftOpen('press'));
     let seed=2166136261;for(const c of owner.toLowerCase()+'#orders#'+day){seed^=c.charCodeAt(0);seed=Math.imul(seed,16777619)>>>0}
     const random=()=>{seed^=seed<<13;seed>>>=0;seed^=seed>>>17;seed^=seed<<5;seed>>>=0;return seed/4294967296};
-    return Array.from({length:3},(_,index)=>{const choices=pool.slice(),items={};for(let n=0;n<Math.min(index+1,2);n++){const [k,counts]=choices.splice(Math.floor(random()*choices.length),1)[0];items[k]=counts[index]}return {index,items,reward:0,done:false}});
+    const orders=Array.from({length:3},(_,index)=>{const choices=pool.slice(),items={};for(let n=0;n<Math.min(index+1,2);n++){const [k,counts]=choices.splice(Math.floor(random()*choices.length),1)[0];items[k]=counts[index]}return {index,items,reward:0,done:false}});
+    if(R.craftOpen('press'))orders.push({index:3,items:{juice:2},stars:2,reward:0,done:false});
+    return orders;
   }
   const itemKey=items=>JSON.stringify(Object.entries(items).sort(([a],[b])=>a.localeCompare(b)));
   const summarize=orders=>orders.map(o=>'#'+(o.index+1)+' '+Object.entries(o.items).map(([k,n])=>(names[k]||k)+'×'+n).join('、')).join('；');
@@ -49,8 +52,8 @@
   const reward=o=>Number.isFinite(o.availableReward)?o.availableReward:o.reward;
   function allowedOrders(orders,config){return (orders||[]).filter(o=>o.forecast||config.workshopStars!==false||reward(o)>0).map(o=>({...o,reward:reward(o)}))}
   function queued(f,now,credits=null){
-    const out={flour:0,bread:0,butter:0,cheese:0,cloth:0},ready=[];
-    for(const s of f.structures.filter(s=>['mill','bakery','dairy','loom'].includes(s.kind)&&R.built(s,now))){
+    const out={flour:0,bread:0,butter:0,cheese:0,cloth:0,juice:0},ready=[];
+    for(const s of f.structures.filter(s=>['mill','bakery','dairy','loom','press'].includes(s.kind)&&R.built(s,now)&&(s.kind!=='press'||R.craftOpen('press')))){
       const done=[];
       for(const batch of s.queue||[]){const r=recipes[batch.r];if(!r||r.building!==s.kind)throw Error('作坊配方变化，暂停检查');out[batch.r]+=credits?.get(batch)??r.count;if(batch.until<=now)done.push(batch)}
       if(done.some(batch=>stock(f,batch.r)+recipes[batch.r].count<=200))ready.push({kind:'craft-take',route:'rwa',id:s.id,action:'craft-collect',arg:s.kind,building:s.kind,before:JSON.stringify(s.queue||[]),energy:0,value:0});
@@ -62,7 +65,7 @@
     return Math.max(0,Math.ceil((bags-(d.farm.silo?.feed||0))/10));
   }
   function demands(d,orders,autoEat,credits=null){
-    const f=d.farm,need={egg:0,milk:0,flour:0,bread:0,butter:0,cheese:0,wool:0,cloth:0};
+    const f=d.farm,need={egg:0,milk:0,flour:0,bread:0,butter:0,cheese:0,wool:0,cloth:0,fruit:0,juice:0};
     R.quote(d); // Validate the authenticated price/day even though demands do not use the quote.
     // Every unfinished supported order is a task, including star-only rewards.
     const eligible=(orders||[]).filter(o=>!o.done&&Number.isFinite(o.reward)&&o.reward>=0&&Object.keys(o.items).length>0&&Object.entries(o.items).every(([k,n])=>values[k]&&Number.isSafeInteger(n)&&n>0));
@@ -74,8 +77,10 @@
     const dairyBatches={};for(const key of ['butter','cheese']){dairyBatches[key]=Math.max(0,need[key]-stock(f,key)-queues.out[key]);if(f.structures.some(s=>s.kind==='dairy'&&R.built(s,d.now)))need.milk+=dairyBatches[key]*recipes[key].inputs.milk;}
     const clothBatches=Math.max(0,need.cloth-stock(f,'cloth')-queues.out.cloth);
     if(f.level>=3&&f.structures.some(s=>s.kind==='loom'&&R.built(s,d.now)))need.wool+=clothBatches*recipes.cloth.inputs.wool;
+    const juiceBatches=Math.max(0,need.juice-stock(f,'juice')-queues.out.juice);
+    if(R.craftOpen('press')&&f.structures.some(s=>s.kind==='press'&&R.built(s,d.now)))need.fruit+=juiceBatches*2;
     const wheat=Math.max(0,need.flour-stock(f,'flour')-queues.out.flour);
-    return {need,orders:eligible,eat,breadBatches,dairyBatches,clothBatches,wheat,queues};
+    return {need,orders:eligible,eat,breadBatches,dairyBatches,clothBatches,juiceBatches,wheat,queues};
   }
   function planToday(d,config,board){
     const f=d.farm,jobs=[];
@@ -92,7 +97,18 @@
       if(count>0){scheduled.set(s.id,{until:start+count*r.ms,count:prior.count+count});jobs.push({kind:'craft-start',route:'rwa',id:s.id,action:'craft-start',arg:recipe+':'+count,recipe,count,finishAt:start+count*r.ms,before:JSON.stringify(s.queue||[]),energy:2,value:0});}
     };
     // Keep changes precede ordinary animal collection, so order ingredients are not sold accidentally.
-    for(const [item,needed,route]of [['egg',neededEggs,'coop'],['milk',neededMilk,'barn'],...(f.level>=3?[['wool',neededWool,'sheepPen']]:[])])if((item!=='wool'||f.structures.some(s=>s.kind==='sheepPen'&&R.built(s,d.now)))&&!!f.keep?.[item]!==(needed>0))jobs.push({kind:'craft-keep',route,action:'keep-toggle',arg:item,keep:needed>0,energy:0,value:0});
+    for(const [item,needed,route]of [['egg',neededEggs,'coop'],['milk',neededMilk,'barn'],...(f.level>=3?[['wool',neededWool,'sheepPen']]:[])])if(f.structures.some(s=>s.kind===route&&R.built(s,d.now))&&!!f.keep?.[item]!==(needed>0))jobs.push({kind:'craft-keep',route,action:'keep-toggle',arg:item,keep:needed>0,energy:0,value:0});
+    const fruitOrchard=f.structures.find(s=>s.kind==='orchard'&&R.built(s,d.now)),press=f.structures.find(s=>s.kind==='press'&&R.built(s,d.now));
+    const neededFruit=Math.max(0,p.need.fruit-stock(f,'fruit'));
+    if(R.craftOpen('press')&&fruitOrchard&&press&&!!f.keep?.fruit!==(neededFruit>0))jobs.push({kind:'craft-keep',route:'orchard',id:fruitOrchard.id,action:'keep-toggle',arg:'fruit',keep:neededFruit>0,energy:0,value:0});
+    if(R.craftOpen('press')&&neededFruit&&press&&f.keep?.fruit&&stock(f,'fruit')<200){
+      for(const orchard of R.orchardPlan(d)){
+        const fruit=orchard.ready.filter(x=>R.isFruit(x.tree));if(!fruit.length)continue;
+        const all=fruit.length===orchard.ready.length&&fruit.length<=200-stock(f,'fruit');
+        const picks=all?fruit:fruit.slice(0,1);
+        jobs.push({kind:'craft-fruit',route:'orchard',id:orchard.id,action:all&&picks.length>1?'harvest-orchard':'harvest-tree',arg:picks[0].i,before:picks.map(x=>({i:x.i,lastHarvestAt:x.lastHarvestAt})),energy:2,value:0});break;
+      }
+    }
     jobs.push(...p.queues.ready);
     for(const o of p.orders)if(Object.entries(o.items).every(([k,n])=>stock(f,k)>=n))jobs.push({kind:'craft-order',route:'orders',action:'order-fill',arg:String(o.index),index:o.index,day:board.day,items:o.items,reward:o.reward,energy:0,value:0});
     for(const [kind,item,route]of [['chicken','egg','coop'],['cow','milk','barn'],['sheep','wool','sheepPen']]){
@@ -121,14 +137,19 @@
       else if(!f.structures.some(s=>s.kind==='loom'&&R.built(s,d.now)))notices.push('织布坊未建成，布料加工等待；其他作坊继续');
       else make('cloth',Math.min(p.clothBatches,Math.floor(Math.max(0,stock(f,'wool')-directWool)/2)));
     }
-    for(const kind of ['mill','bakery','dairy','loom']){
+    if(p.juiceBatches){
+      if(!R.craftOpen('press'))notices.push('果汁加工未开放');
+      else if(!press)notices.push('压榨坊未建成，果汁等待成品或市场补货；其他订单继续');
+      else{make('juice',Math.min(p.juiceBatches,Math.floor(Math.max(0,stock(f,'fruit')-p.orders.reduce((n,o)=>n+(o.items.fruit||0),0))/2)));if(neededFruit&&!fruitOrchard)notices.push('未建果园，果汁等待库存或市场补货；其他订单继续');}
+    }
+    for(const kind of ['mill','bakery','dairy','loom',...(R.craftOpen('press')?['press']:[])]){
       const s=f.structures.find(s=>s.kind===kind),queue=s?.queue||[],active=queue.filter(x=>x.until>d.now),ready=queue.length-active.length;
-      let text=kind==='loom'&&f.level<3?'市政厅 3 级解锁':!s?'未建造':!R.built(s,d.now)?'建造中':ready?'有 '+ready+' 批成品待收':active.length?names[active[0].r]+'加工中 · 下批约 '+Math.max(1,Math.ceil((Math.min(...active.map(x=>x.until))-d.now)/60000))+' 分钟':kind==='dairy'&&neededMilk?'缺牛奶 '+neededMilk+' 份 · 按订单保留':kind==='loom'&&neededWool?'缺羊毛 '+neededWool+' 份 · 按订单保留':kind==='bakery'&&p.breadBatches?'等待面粉或鸡蛋':'暂无待加工需求';
+      let text=kind==='loom'&&f.level<3?'市政厅 3 级解锁':!s?'未建造':!R.built(s,d.now)?'建造中':ready?'有 '+ready+' 批成品待收':active.length?names[active[0].r]+'加工中 · 下批约 '+Math.max(1,Math.ceil((Math.min(...active.map(x=>x.until))-d.now)/60000))+' 分钟':kind==='dairy'&&neededMilk?'缺牛奶 '+neededMilk+' 份 · 按订单保留':kind==='loom'&&neededWool?'缺羊毛 '+neededWool+' 份 · 按订单保留':kind==='press'&&neededFruit?'缺水果 '+neededFruit+' 份 · 按订单保留':kind==='bakery'&&p.breadBatches?'等待面粉或鸡蛋':'暂无待加工需求';
       const start=jobs.find(j=>j.recipe&&recipes[j.recipe].building===kind);if(start&&!queue.length)text='待制作'+names[start.recipe]+' '+start.count+' 批';
       lines.push({label:names[kind],text});
     }
     const eatAvailable=Math.min(p.eat,Math.max(0,stock(f,'bread')-p.orders.reduce((n,o)=>n+(o.items.bread||0),0)));
-    const note=[...new Set(notices)].join('；')|| (neededWool?'还需 '+neededWool+' 份羊毛；保留后自动收取':neededMilk?'还需 '+neededMilk+' 份牛奶；保留后自动收取':neededEggs?'还需 '+neededEggs+' 个鸡蛋；保留后自动收取':p.wheat>wheatAvailable?'小麦不足，先保留 '+feedWheat(d,config.feedDays)+' 份作饲料':Object.values(p.queues.out).some(Boolean)?'作坊加工中，成品完成后收取':p.orders.length?(config.workshopStars===false?'按今日金币订单安排生产':'按今日订单安排生产（含星星订单）'):config.workshopStars===false&&board.orders.some(o=>!o.done&&!(reward(o)>0))?'纯星星订单已跳过':'今日订单已完成');
+    const note=[...new Set(notices)].join('；')|| (neededFruit?'还需 '+neededFruit+' 份水果；按订单保留':neededWool?'还需 '+neededWool+' 份羊毛；保留后自动收取':neededMilk?'还需 '+neededMilk+' 份牛奶；保留后自动收取':neededEggs?'还需 '+neededEggs+' 个鸡蛋；保留后自动收取':p.wheat>wheatAvailable?'小麦不足，先保留 '+feedWheat(d,config.feedDays)+' 份作饲料':Object.values(p.queues.out).some(Boolean)?'作坊加工中，成品完成后收取':p.orders.length?(config.workshopStars===false?'按今日金币订单安排生产':'按今日订单安排生产（含星星订单）'):config.workshopStars===false&&board.orders.some(o=>!o.done&&!(reward(o)>0))?'纯星星订单已跳过':'今日订单已完成');
     return {jobs,note,lines,wheat:p.wheat,orders:p.orders,eatAvailable};
   }
 
@@ -139,7 +160,7 @@
     try{
       if(orderDay(d)!==new Date(d.now).toISOString().slice(0,10))throw Error('服务器订单日期待同步');
       const expected=forecast(f.owner,board.day);
-      if(board.orders.length!==3||expected.some((o,i)=>board.orders[i]?.index!==i||itemKey(board.orders[i].items)!==itemKey(o.items)))throw Error('实际订单与预测规则不一致');
+      if(board.orders.length!==expected.length||expected.some((o,i)=>board.orders[i]?.index!==i||itemKey(board.orders[i].items)!==itemKey(o.items)))throw Error('实际订单与预测规则不一致');
       const day=new Date(orderReset(d)).toISOString().slice(0,10);
       next={day,orders:forecast(f.owner,day).map(o=>({...o,forecast:true}))};
     }catch(e){return {...today,prep:{error:e.message},note:today.note+'；次日备货暂停：'+e.message}}
@@ -156,14 +177,15 @@
     const future=planToday(virtual,{...config,workshopPrep:false,workshopEat:false,_prep:true,_prepCredits:credits},futureBoard);
     const futureNeed=demands(virtual,next.orders,false,credits);
     const keep=[];
-    for(const [item,route]of [['egg','coop'],['milk','barn'],['wool','sheepPen']]){
+    for(const [item,route]of [['egg','coop'],['milk','barn'],['wool','sheepPen'],...(R.craftOpen('press')?[['fruit','orchard']]:[])]){
       if(item==='wool'&&f.level<3||!f.structures.some(s=>s.kind===route&&R.built(s,d.now)))continue;
       const needed=current.need[item]>stock(f,item)||futureNeed.need[item]>stock(virtual.farm,item);
-      if(!!f.keep?.[item]!==needed)keep.push({kind:'craft-keep',route,action:'keep-toggle',arg:item,keep:needed,energy:0,value:0});
+      if(item==='fruit'&&!f.structures.some(s=>s.kind==='press'&&R.built(s,d.now)))continue;
+      if(!!f.keep?.[item]!==needed)keep.push({kind:'craft-keep',route,...(item==='fruit'?{id:f.structures.find(s=>s.kind==='orchard'&&R.built(s,d.now)).id}:{}),action:'keep-toggle',arg:item,keep:needed,energy:0,value:0});
     }
-    const busyToday={mill:current.wheat>0,bakery:current.breadBatches>0,dairy:Object.values(current.dairyBatches).some(n=>n>0),loom:current.clothBatches>0};
+    const busyToday={mill:current.wheat>0,bakery:current.breadBatches>0,dairy:Object.values(current.dairyBatches).some(n=>n>0),loom:current.clothBatches>0,press:current.juiceBatches>0};
     const currentJobs=today.jobs.filter(j=>j.kind!=='craft-keep');
-    const preparation=future.jobs.filter(j=>j.kind==='craft-start'&&!busyToday[recipes[j.recipe].building]||['craft-eggs','craft-milk','craft-wool'].includes(j.kind)&&!currentJobs.some(x=>x.kind===j.kind)).map(j=>({...j,prep:true}));
+    const preparation=future.jobs.filter(j=>j.kind==='craft-start'&&!busyToday[recipes[j.recipe].building]||['craft-eggs','craft-milk','craft-wool','craft-fruit'].includes(j.kind)&&!currentJobs.some(x=>x.kind===j.kind)).map(j=>({...j,prep:true}));
     preparation.sort((a,b)=>(recipes[b.recipe]?.ms||0)-(recipes[a.recipe]?.ms||0));
     const directBread=allowedOrders(board.orders,config).filter(o=>!o.done).reduce((n,o)=>n+(o.items.bread||0),0)+next.orders.reduce((n,o)=>n+(o.items.bread||0),0);
     const late=preparation.some(j=>j.finishAt>orderReset(d))||Object.keys(futureNeed.need).some(k=>{
@@ -175,7 +197,7 @@
     const shortages=Object.entries(futureNeed.need).map(([k,n])=>({item:k,count:Math.max(0,n-stock(virtual.farm,k)-(futureNeed.queues.out[k]||0))})).filter(x=>x.count>0);
     const prep={...next,summary:summarize(next.orders),need:futureNeed.need,shortages,covered,late,waiting:future.note};
     const lines=today.lines.map(line=>{
-      const kind={磨坊:'mill',面包房:'bakery',乳品坊:'dairy',织布坊:'loom'}[line.label];
+      const kind={磨坊:'mill',面包房:'bakery',乳品坊:'dairy',织布坊:'loom',压榨坊:'press'}[line.label];
       const relevant=Object.entries(recipes).some(([key,r])=>r.building===kind&&futureNeed.need[key]>0);
       const other=future.lines.find(x=>x.label===line.label);
       return !busyToday[kind]&&relevant&&other?{...line,text:'次日备货 · '+other.text}:line;
@@ -192,5 +214,5 @@
     if(p.kind==='craft-start'||p.kind==='craft-take'){const s=f.structures.find(s=>s.id===p.id);return !!s&&JSON.stringify(s.queue||[])!==p.before}
     return false;
   }
-  window.__farmWorkshop={recipes,stock,week,orderDay,orderReset,orderCap,budgetLeft,orderValue,syncBoard,reward,allowedOrders,readBudget,invalidateBudget,forecast,queued,feedWheat,demands,plan,pendingDone};
+  window.__farmWorkshop={recipes,orderCount,stock,week,orderDay,orderReset,orderCap,budgetLeft,orderValue,syncBoard,reward,allowedOrders,readBudget,invalidateBudget,forecast,queued,feedWheat,demands,plan,pendingDone};
 })();

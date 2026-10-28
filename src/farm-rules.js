@@ -5,6 +5,8 @@
   const animals={chicken:{building:'coop',bags:2,meal:.01,days:1,capacity:6},cow:{building:'barn',bags:8,meal:.04,days:1,capacity:3},sheep:{building:'sheepPen',bags:5,meal:.025,days:3,capacity:4},pig:{building:'pigPen',bags:10,meal:.05,days:7,capacity:2}};
   const trees={apple:{ms:86400000,value:.05},lemon:{ms:86400000,value:.055},orange:{ms:86400000,value:.055},blueberry:{ms:43200000,value:.025},raspberry:{ms:43200000,value:.025},blackberry:{ms:43200000,value:.025}};
   const levels=[null,{mult:1,harvest:.7,passive:.25},{mult:1.6,harvest:1.64,passive:.58},{mult:1.75,harvest:3.74,passive:1.33},{mult:2.1,harvest:8.4,passive:3},{mult:2.4,harvest:18.66,passive:6.67}];
+  const craftOpen=kind=>window.__FS_CRAFT__===true&&(window.__FS_CRAFT2__===true||Array.isArray(window.__FS_CRAFT2__)&&window.__FS_CRAFT2__.includes(kind));
+  const isFruit=id=>['apple','lemon','orange'].includes(id);
   const built=(s,now)=>!s.buildUntil||s.buildUntil<=now;
   function calendar(f,now){
     if(!Number.isFinite(f.tz)||Math.abs(f.tz)>840)throw Error('无法确认农场时区');
@@ -62,14 +64,14 @@
     for(const a of ready){const r=animals[a.kind],b=building(f,a);if(!r||!b)throw Error('未知动物或建筑');bs.set(b.id,b);const item={chicken:'egg',cow:'milk',sheep:'wool'}[a.kind];if(item&&f.keep?.[item]&&(f.pantry?.[item]||0)+(kept[item]||0)<200){kept[item]=(kept[item]||0)+1;continue}value+=q.animalValue(r.meal*4*r.days)}
     return {ready,value,energy:[...bs.values()].filter(b=>b.collectDay!==q.cal.day).length*2};
   }
-  function orchardPlan(d){return d.farm.structures.filter(s=>s.kind==='orchard'&&built(s,d.now)).map(s=>{
+  function orchardPlan(d){const f=d.farm,q=quote(d);let stored=f.pantry?.fruit||0;return f.structures.filter(s=>s.kind==='orchard'&&built(s,d.now)).map(s=>{
     const ready=(s.slots||[]).map((x,i)=>({...x,i})).filter(x=>trees[x.tree]&&d.now-x.lastHarvestAt>=trees[x.tree].ms);
-    const value=ready.reduce((n,x)=>n+quote(d).value(trees[x.tree].value),0);return {id:s.id,ready,value};
+    const value=ready.reduce((n,x)=>{if(craftOpen('press')&&f.keep?.fruit&&isFruit(x.tree)&&stored<200){stored++;return n}return n+q.value(trees[x.tree].value)},0);return {id:s.id,ready,value};
   }).filter(x=>x.ready.length)}
   function futureValue(d,flags){
     const f=d.farm,q=quote(d);let total=0;
     if(flags.collect)total+=collectPlan(d).value;
-    if(flags.orchard)for(const s of f.structures.filter(s=>s.kind==='orchard'))for(const x of s.slots||[]){const t=trees[x.tree];if(t&&x.lastHarvestAt+t.ms<q.cal.nextMidnight)total+=q.value(t.value)}
+    if(flags.orchard){let stored=f.pantry?.fruit||0;for(const s of f.structures.filter(s=>s.kind==='orchard'))for(const x of s.slots||[]){const t=trees[x.tree];if(t&&x.lastHarvestAt+t.ms<q.cal.nextMidnight){if(craftOpen('press')&&f.keep?.fruit&&isFruit(x.tree)&&stored<200)stored++;else total+=q.value(t.value)}}}
     for(const x of f.fields){const c=crops[x.crop];if(c&&!['wheat','corn'].includes(x.crop)&&x.plantedAt+c.ms<q.cal.nextMidnight)total+=q.value(c.value)}
     return total;
   }
@@ -141,12 +143,12 @@
     if(p.kind==='feed')return p.ids.every(id=>{const a=f.animals.find(a=>a.id===id),before=p.before?.find(x=>x.id===id);return !a||a.fedWindows?.includes(p.meal)||(before&&a.lastFedAt>before.lastFedAt)});
     if(p.kind==='collect')return p.ids.every(id=>!f.animals.find(a=>a.id===id)?.productReady);
     if(['harvest','plant'].includes(p.kind))return p.before.every(b=>{const x=f.fields.find(x=>x.id===b.id);return !x||(p.kind==='harvest'?x.crop!==b.crop||x.plantedAt!==b.plantedAt:!!x.crop&&(x.crop!==b.crop||x.plantedAt!==b.plantedAt))});
-    if(p.kind==='orchard'){const s=f.structures.find(s=>s.id===p.id);return !s||p.before.every(x=>(s.slots?.[x.i]?.lastHarvestAt||0)>x.lastHarvestAt)}
+    if(p.kind==='orchard'||p.kind==='craft-fruit'){const s=f.structures.find(s=>s.id===p.id);return !s||p.before.every(x=>(s.slots?.[x.i]?.lastHarvestAt||0)>x.lastHarvestAt)}
     if(p.kind==='mine')return (f.structures.find(s=>s.id===p.id)?.mineAt||0)>p.before;
     if(p.kind==='oil')return f.structures.find(s=>s.id===p.id)?.collectDay>=p.day;
     if(p.kind==='income')return f.passiveSince>p.before;
     if(p.kind==='energy')return f.today.energy>=p.before+10||(f.today.bought||0)>=p.bought+10;
     return false;
   }
-  window.__farmRules={crops,cropRows,trees,animals,levels,built,calendar,quote,building,feedPlan,collectPlan,orchardPlan,futureValue,chooseCrop,fishingPlan,pendingDone};
+  window.__farmRules={craftOpen,isFruit,crops,cropRows,trees,animals,levels,built,calendar,quote,building,feedPlan,collectPlan,orchardPlan,futureValue,chooseCrop,fishingPlan,pendingDone};
 })();

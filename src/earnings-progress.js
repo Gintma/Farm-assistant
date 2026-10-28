@@ -60,19 +60,20 @@
     const valid=!!view&&view.sameDay&&age<60000&&!error&&!blocked;
     const status=blocked?'兼容性待检查':window.__farmVerification?.isBlocked()?'等待人工验证':error?'读取失败，显示上次数据':view&&!view.sameDay?'跨日了，等待读取':data&&age>=60000?'数据已过期，等待读取':!view?'正在读取完成情况':'';
     stamp.hidden=!status;stamp.textContent=status;
-    const key=JSON.stringify({view,valid,status,budgetError});if(key===lastView)return;lastView=key;
+    const total=W.orderCount();
+    const count=data&&data.farm.orders?.day===W.orderDay({...data,now})&&Array.isArray(data.farm.orders.done)?new Set(data.farm.orders.done.filter(n=>Number.isInteger(n)&&n>=0&&n<total)).size:0;
+    const key=JSON.stringify({view,valid,status,budgetError,count,total});if(key===lastView)return;lastView=key;
     todayBody.replaceChildren();detailBody.replaceChildren();
     for(const [label,value]of [['收获',view?.harvest],['战斗',view?.battle]]){
       const full=valid&&!!value&&value.left===0;
       row(todayBody,label,!valid||!value?'等待更新':full?'已满额':'尚未满额',full?'done':'waiting');
       row(detailBody,label,value?number(value.earned)+' / '+number(value.cap):'等待数据');
     }
-    const count=data&&data.farm.orders?.day===W.orderDay({...data,now})&&Array.isArray(data.farm.orders.done)?new Set(data.farm.orders.done.filter(n=>Number.isInteger(n)&&n>=0&&n<3)).size:0;
     const allowance=view?.orders?.left,globalLeft=view?.budget?.left;
     const knownBudget=Number.isFinite(globalLeft)&&!budgetError;
-    const stars=valid&&count<3&&(allowance===0||knownBudget&&globalLeft===0);
-    const done=valid&&count===3;
-    const orderState=!valid?'等待更新':data.farm.level<2?'市政厅2级开放':!view.orders?'等待读取':done?'已完成 3/3':stars?'已完成 '+count+'/3 · 仅星星':!knownBudget?'已完成 '+count+'/3 · 奖励待确认':'已完成 '+count+'/3';
+    const stars=valid&&count<total&&(allowance===0||knownBudget&&globalLeft===0);
+    const done=valid&&count===total;
+    const orderState=!valid?'等待更新':data.farm.level<2?'市政厅2级开放':!view.orders?'等待读取':done?'已完成 '+count+'/'+total:stars?'已完成 '+count+'/'+total+' · 仅星星':!knownBudget?'已完成 '+count+'/'+total+' · 奖励待确认':'已完成 '+count+'/'+total;
     row(todayBody,'作坊订单',orderState,done?'done':stars?'limited':'waiting');
     reason.hidden=!(stars||budgetError);
     reason.textContent=stars?(allowance===0?'账号今日订单金币额度已用完。':'全服订单金币预算已耗尽。'):budgetError;
