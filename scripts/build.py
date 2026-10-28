@@ -5,7 +5,7 @@ import zipfile
 root = Path(__file__).resolve().parents[1]
 bot = root / 'src'
 ext = root / 'extension'
-version = '1.22.0'
+version = '1.22.1'
 modules = [
     'battle-planner.js', 'update-catalog.js', 'compatibility.js', 'version-guard.js', 'activity-store.js',
     'verification-guard.js', 'farm-rules.js', 'workshop-rules.js',
@@ -39,7 +39,7 @@ head = '''/* Farming Season helper __HELPER_VERSION__: original combat mechanics
 tail = '''
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 __HELPER_VERSION__ 已开启；请先完成面板内的游戏版本检查';
+  return '助手 __HELPER_VERSION__ 已开启；请查看面板中的游戏代码检查状态';
 })();
 '''
 (root / 'dist').mkdir(exist_ok=True)

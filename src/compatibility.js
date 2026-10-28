@@ -2,17 +2,18 @@
 (() => {
   window.__farmCompatibility?.remove();
   const key='farm-helper.compatibility.v1',catalog=window.__farmUpdateCatalog||{},listeners=new Set();
-  let issues={},storageOK=true,removed=false;const passes=new Map();
+  let issues={},storageOK=true,removed=false,enabled=true,generation=0;const passes=new Map();
   const names={farm:'农务',battle:'战斗',workshop:'作坊',market:'市场采购',account:'账号数据',all:'全部功能'};
   try{const saved=JSON.parse(localStorage.getItem(key)||'null');if(saved){if(saved.schema!==1||!Array.isArray(saved.issues)||saved.issues.length>20)throw Error();for(const i of saved.issues){if(!i||typeof i.id!=='string'||i.id.length>100||!Object.hasOwn(names,i.scope)||typeof i.reason!=='string'||i.reason.length>240)throw Error();issues[i.id]={id:i.id,scope:i.scope,reason:i.reason}}}}catch{storageOK=false}
   function changed(){try{localStorage.setItem(key,JSON.stringify({schema:1,issues:Object.values(issues)}))}catch{storageOK=false}for(const fn of listeners)try{fn()}catch{}}
-  function fail(id,scope,reason){passes.delete(id);if(issues[id]?.reason===reason&&issues[id]?.scope===scope)return;issues[id]={id,scope,reason};changed()}
+  function fail(id,scope,reason){if(!enabled)return;passes.delete(id);if(issues[id]?.reason===reason&&issues[id]?.scope===scope)return;issues[id]={id,scope,reason};changed()}
   function good(id){if(!issues[id])return;const n=(passes.get(id)||0)+1;passes.set(id,n);if(n>=2){delete issues[id];passes.delete(id);changed()}}
   function isBlocked(scope='all'){
+    if(!enabled)return false;
     if(!storageOK)return true;
     return Object.values(issues).some(i=>i.scope==='all'||i.scope===scope||i.scope==='account'&&['farm','earnings','battle'].includes(scope)||i.scope==='farm'&&scope==='earnings');
   }
-  function status(){return {storageOK,issues:Object.values(issues).map(i=>({...i,label:names[i.scope]}))}}
+  function status(){return {enabled,storageOK,issues:Object.values(issues).map(i=>({...i,label:names[i.scope]}))}}
   function equivalent(approved,result){
     if(!approved?.files?.length||!result.files?.length||approved.files.length!==result.files.length)return false;
     const identity=f=>{const rule=catalog[f.hash],path=new URL(f.url).pathname;
@@ -25,6 +26,7 @@
   const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v),num=v=>typeof v==='number'&&Number.isFinite(v);
   const orderCount=()=>window.__farmWorkshop?.orderCount?.()??(window.__FS_CRAFT__===true&&(window.__FS_CRAFT2__===true||Array.isArray(window.__FS_CRAFT2__)&&window.__FS_CRAFT2__.includes('press'))?4:3);
   function request(path,body){
+    if(!enabled)return;
     const scope=path.includes('/battle/')?'battle':path.includes('/market/')?'market':path.endsWith('/order')?'workshop':'farm',id='request:'+path;
     let data;try{data=typeof body==='string'&&body.length<=1048576?JSON.parse(body):null}catch{}
     if(!object(data)){fail(id,scope,'操作请求不再是可确认的 JSON 对象');return}
@@ -39,6 +41,7 @@
     if(!required||Object.keys(data).some(k=>!allowed.includes(k))||data.px!==undefined&&(!object(data.px)||!num(data.px.pay)||!num(data.px.charge)||data.px.mult!==undefined&&!num(data.px.mult))){fail(id,scope,'操作请求的字段或类型变化，等待核对');return}good(id);
   }
   function response(path,data,method='GET'){
+    if(!enabled)return;
     const scope=path.includes('/battle/')?'battle':path.includes('/market')?'market':path.endsWith('/order')?'workshop':'farm',id='response:'+path;
     if(path==='/api/farm/order'&&method!=='GET')return; // Action acknowledgement cannot validate the GET contract.
     if(!object(data)){fail(id,scope,'响应结构变化：预期 JSON 对象');return}
@@ -57,27 +60,30 @@
   const original=window.fetch||fetch;
   function observed(input,init){
     const pending=Reflect.apply(original,this,arguments);
+    if(!enabled||removed)return pending;const revision=generation;
     try{
       const url=new URL(typeof input==='string'||input instanceof URL?input:input.url,location.href),method=String(init?.method||input?.method||'GET').toUpperCase();
       if(url.origin!==location.origin||!paths.has(url.pathname))return pending;
       const path=url.pathname;
       if(method==='POST')request(path,init?.body);
       void Promise.resolve(pending).then(res=>{
-        if(removed)return;if(res.status===401){fail('session','all','登录状态失效，请重新登录');return}
+        if(removed||!enabled||revision!==generation)return;if(res.status===401){fail('session','all','登录状态失效，请重新登录');return}
         if(!res.ok||typeof res.clone!=='function')return;
         // Read a bounded clone only. Never consume the game's response stream.
-        if(Number(res.headers?.get?.('content-length'))>1048576)return;const copy=res.clone();void copy.text().then(text=>{if(removed||text.length>1048576)return;let data;try{data=JSON.parse(text)}catch{return}response(path,data,method)}).catch(()=>{});
+        if(Number(res.headers?.get?.('content-length'))>1048576)return;const copy=res.clone();void copy.text().then(text=>{if(removed||!enabled||revision!==generation||text.length>1048576)return;let data;try{data=JSON.parse(text)}catch{return}response(path,data,method)}).catch(()=>{});
       }).catch(()=>{});
     }catch{}
     return pending;
   }
   window.fetch=observed;
   async function recheck(){
+    if(!enabled)return;const revision=generation;
     const needed=new Set(Object.values(issues).map(i=>i.scope));
     const urls=[...(needed.has('all')||needed.has('account')||needed.has('farm')?['/api/farm']:[]),...(needed.has('workshop')?['/api/farm/order']:[]),...(needed.has('market')?['/api/farm/market']:[])];
     // Two read-only samples can clear a transient response fault. No POST,
     // battle start, purchase, replay or protocol-baseline learning takes place.
-    for(let n=0;n<2;n++)for(const url of urls)try{await observed(url,{credentials:'same-origin',cache:'no-store'})}catch{}
+    for(let n=0;n<2;n++)for(const url of urls)try{if(!enabled||revision!==generation)return;await observed(url,{credentials:'same-origin',cache:'no-store'})}catch{}
   }
-  window.__farmCompatibility={equivalent,isBlocked,status,request,response,recheck,fail,subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},remove:()=>{removed=true;if(window.fetch===observed)window.fetch=original;listeners.clear();delete window.__farmCompatibility}};
+  function setEnabled(value){const next=value!==false;if(next===enabled)return;enabled=next;generation++;passes.clear();for(const fn of listeners)try{fn()}catch{}}
+  window.__farmCompatibility={setEnabled,equivalent,isBlocked,status,request,response,recheck,fail,subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},remove:()=>{removed=true;if(window.fetch===observed)window.fetch=original;listeners.clear();delete window.__farmCompatibility}};
 })();
