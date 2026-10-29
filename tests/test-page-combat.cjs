@@ -88,17 +88,6 @@ b=boot();b.document.activeElement={matches:()=>true};b.window.__farmCombat.set('
 console.log('PASS: transport failure disables battle instead of internal fallback, and editing blocks keyboard automation');
 
 
-b=boot();assert.equal(b.window.__farmCombat.status().keyCount,null,'missing telemetry is unknown, not zero');
-const downs=[],sig={kd:downs};b.scene.run.sig=sig;
-assert.equal(b.window.__farmCombat.status().keyCount,0,'empty run starts at zero even with automation off');
-downs.push(100,200,300);assert.equal(b.window.__farmCombat.status().keyCount,3,'reads live game key-down samples during manual play');
-assert.equal(b.scene.run.sig,sig);assert.equal(sig.kd,downs);assert.deepEqual(downs,[100,200,300]);assert(!('keys' in sig),'display must not add exported fields to live telemetry');
-b.scene.mode='perk';assert.equal(b.window.__farmCombat.status().keyCount,3,'upgrade selection retains count');
-b.scene.run.active=false;b.scene.mode='end';Object.freeze(downs);Object.freeze(sig);assert.equal(b.window.__farmCombat.status().keyCount,3,'final count stays readable without mutations');
-b.scene.mode='lobby';assert.equal(b.window.__farmCombat.status().keyCount,null,'lobby does not display stale previous-run count');
-b.scene.mode='play';b.scene.run={active:true,sig:{kd:[]}};assert.equal(b.window.__farmCombat.status().keyCount,0,'new run starts with its own samples');
-b.scene.run.sig.kd=new Array(4000).fill(100);assert.equal(b.window.__farmCombat.status().keyCount,4000,'uses game sample length including its 4000-sample cap');
-b.scene.run.sig.kd={length:42};assert.equal(b.window.__farmCombat.status().keyCount,null,'invalid telemetry stays unknown');
-b.window.__farmCombat.remove();console.log('PASS: live read-only keys count follows manual play, upgrades, ending and run resets');
+b=boot();let goalEnabled=true;b.window.__farmCombatGoal={setEnabled:value=>goalEnabled=value};b.fire('keydown','Escape');assert.equal(goalEnabled,false,'Escape disables the independent gold goal as well');b.window.__farmCombat.remove();
 
 })().catch(e=>{console.error(e);process.exitCode=1});

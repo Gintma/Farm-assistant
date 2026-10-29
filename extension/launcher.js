@@ -1,9 +1,9 @@
-/* Farming Season helper 1.25.0: original combat mechanics and unified controls. */
+/* Farming Season helper 1.25.1: original combat mechanics and unified controls. */
 (() => {
   if(location.hostname!=='farmingseason.io')throw Error('请只在 Farming Season 游戏页启动');
   const temp1=window.__farmGame||window.temp1;
   if(!temp1?.scene?.scenes)throw Error('未找到游戏实例，请使用扩展启动');
-  if(window.__farmLauncher?.status?.().version==='1.25.0')return '助手已开启，保留当前所有开关';
+  if(window.__farmLauncher?.status?.().version==='1.25.1')return '助手已开启，保留当前所有开关';
   const handoff={farm:window.__farmAutoFarm?.status?.(),automation:window.__farmAutomation?.status?.(),layout:window.__farmLayout?.status?.()};
   if(handoff.farm?.pending)throw Error('旧版农活尚未完成，请等队列完成后再次开启新版助手');
   window.__farmLauncher?.remove();
@@ -14,7 +14,7 @@
   function cleanup(){
     window.__farmBattleReport?.remove();window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();window.__farmCompatibility?.remove();delete window.__farmUpdateCatalog;
   }
-  window.__farmLauncher={status:()=>({installed:true,version:'1.25.0',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
+  window.__farmLauncher={status:()=>({installed:true,version:'1.25.1',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{
 /* Pure planning over read-only snapshots. Inputs are regular direction/Space/E keys. */
 (() => {
@@ -1986,7 +1986,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
   }
   function manual(e){
     if(!e.isTrusted||window.__farmBattleInput?.owns?.(e))return;
-    if(e.type==='keydown'&&e.code==='Escape'){set('enabled',false);return}
+    if(e.type==='keydown'&&e.code==='Escape'){set('enabled',false);window.__farmCombatGoal?.setEnabled?.(false);return}
     if(['keydown','pointerdown'].includes(e.type)&&e.target?.closest?.('#farm-compact-controls'))return;
     if(e.type==='keyup'&&!manualKeys.has(e.code))return;
     if(['pointerup','pointercancel'].includes(e.type)&&!manualPointer)return;
@@ -2068,14 +2068,8 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
       state={...state,phase:'running',message:action.message,target:action.target||'',enemies:frame.enemies.length,entering:frame.enemies.filter(e=>e.state==='enter').length,hiddenEnemies:frame.enemies.filter(e=>e.phased||e.state==='appear').length,attackable:frame.enemies.filter(e=>e.hittable&&e.state!=='enter').length,projectiles:frame.projectiles.length,recognized:true,frameMs:Math.round(performance.now()-started),casts:state.casts+result.casts,dodges:state.dodges+result.dodges,travelDodges:state.travelDodges+(result.travelDodges??(action.intent==='travel'?result.dodges:0)),intent:action.intent,riskLevel:action.riskLevel,killsPerMinute:seconds>=15?Math.round(kills*60/seconds):null,hits:s.run?.hits??0,threats:action.threats||0,hp:h.hp,wave:s.wave};
     }catch(error){set('enabled',false);state={...state,phase:'error',message:error.message}}
   }
-  // Match the game's exported stats.sig.keys without writing its telemetry.
-  function keyCount(){
-    const scene=(window.__farmGame||window.temp1)?.scene?.scenes?.find(s=>s.sys?.settings?.key==='battle');
-    const downs=scene?.run?.sig?.kd;
-    return scene?.mode!=='lobby'&&Array.isArray(downs)?downs.length:null;
-  }
   const timer=setInterval(observe,60);
-  window.__farmCombat={set,pauseInput:wait,fail:message=>{set('enabled',false);state={...state,phase:'error',message}},status:()=>({...options,...state,keyCount:keyCount(),inputTransport:window.__farmBattleInput?.status?.().transport,goldGoal:window.__farmCombatGoal?.status?.(),manualPaused:Date.now()<manualUntil||manualKeys.size>0||manualPointer,choices:window.__farmCombatPerks?.status?.().choices??state.choices,perkMessage:window.__farmCombatPerks?.status?.().message,selecting:options.enabled&&window.__farmCombatPerks?.status?.().waiting}),remove:()=>{
+  window.__farmCombat={set,pauseInput:wait,fail:message=>{set('enabled',false);state={...state,phase:'error',message}},status:()=>({...options,...state,inputTransport:window.__farmBattleInput?.status?.().transport,goldGoal:window.__farmCombatGoal?.status?.(),manualPaused:Date.now()<manualUntil||manualKeys.size>0||manualPointer,choices:window.__farmCombatPerks?.status?.().choices??state.choices,perkMessage:window.__farmCombatPerks?.status?.().message,selecting:options.enabled&&window.__farmCombatPerks?.status?.().waiting}),remove:()=>{
     set('enabled',false);clearInterval(timer);mortarTracks.clear();window.__farmCombatPerks?.remove();
     window.removeEventListener('keydown',manual,true);window.removeEventListener('keyup',manual,true);window.removeEventListener('pointerdown',manual,true);window.removeEventListener('pointerup',manual,true);window.removeEventListener('pointercancel',manual,true);window.removeEventListener('blur',blur);window.removeEventListener('pagehide',hide);document.removeEventListener('visibilitychange',visibility);
     window.__farmBattleInput?.remove();delete window.__farmCombat;
@@ -2085,7 +2079,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 /* Per-run loot target. Read original state; leave through the game's original endRun. */
 (() => {
   window.__farmCombatGoal?.remove();
-  let quota=null,run=null,scene=null,target=null,manualTarget=null,attempted=false,triggered=false;
+  let quota=null,run=null,scene=null,target=null,manualTarget=null,attempted=false,triggered=false,enabled=false,invalidTarget=false;
   let earned=0,message='等待读取今日战斗额度',removed=false,busy=false,controller=null,lastTry=-Infinity,ui=null;
   const valid=n=>Number.isSafeInteger(n)&&n>=0;
   const gameScene=()=>(window.__farmGame||window.temp1)?.scene?.scenes?.find(s=>s.sys?.settings?.key==='battle');
@@ -2120,6 +2114,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     }
     readDisplay(s);
     const amount=gain(run);if(amount!==null)earned=amount;
+    if(invalidTarget){target=null;return}
     if(!run?.active){if(s?.mode==='lobby')earned=0;target=manualTarget??(quota&&Date.now()-quota.at<60000?quota.left:null);return}
     if(manualTarget!==null)target=manualTarget;
     else if(target===null&&quota&&Date.now()-quota.at<60000&&(!quota.consumed||quota.consumed===run)){
@@ -2127,7 +2122,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     }
   }
   async function refresh(){
-    if(removed||busy||blocked())return;
+    if(removed||busy||invalidTarget||blocked())return;
     const s=gameScene(),root=document.getElementById('battle-ui');
     if(!s||s.tut||!visible(root)||Date.now()-lastTry<15000)return;
     if(s.run?.active&&target!==null)return;
@@ -2148,9 +2143,10 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
   }
   function check(){
     if(removed)return;sync();
-    if(!attempted&&target!==null)message='本局已获 '+earned+' / '+target+' 金币，达到后自动撤退结算';
-    if(!attempted&&run?.active&&!scene.tut&&!scene.hero?.dead&&['play','perk'].includes(scene.mode)&&!(scene.mode==='play'&&scene.paused)&&!blocked()&&window.__farmCombat?.status?.().enabled&&target!==null&&gain(run)!==null&&earned>=target){
-      attempted=true;window.__farmCombat.set('enabled',false);window.__farmBattleInput?.release();
+    if(!attempted&&invalidTarget)message='请输入大于或等于0的整数金币数';
+    else if(!attempted&&target!==null)message='本局已获 '+earned+' / '+target+' 金币'+(enabled?'，到额退出':'');
+    if(enabled&&!attempted&&run?.active&&!scene.tut&&!scene.hero?.dead&&['play','perk'].includes(scene.mode)&&!(scene.mode==='play'&&scene.paused)&&!blocked()&&target!==null&&gain(run)!==null&&earned>=target){
+      attempted=true;window.__farmCombat?.set?.('enabled',false);window.__farmBattleInput?.release();
       try{
         if(typeof scene.endRun!=='function')throw Error('游戏撤退入口不可用，请手动结束本局');
         scene.endRun(false);if(run.active)throw Error('撤退未生效，已关闭自动战斗，请手动结束本局');
@@ -2161,33 +2157,35 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     paint();void refresh();
   }
   function setTarget(value){
-    if(value===''||value===null||value===undefined||typeof value==='string'&&!value.trim())return false;
-    const n=Number(value);if(!valid(n))return false;
+    const empty=value===''||value===null||value===undefined||typeof value==='string'&&!value.trim();
+    const n=empty?NaN:Number(value);
+    invalidTarget=!valid(n);
+    if(invalidTarget){target=null;message='请输入大于或等于0的整数金币数';paint();return false}
     manualTarget=n;sync();paint();return true;
   }
-  function useDailyDefault(){manualTarget=null;target=null;sync();lastTry=-Infinity;paint();void refresh()}
-  function status(){return {target,earned,remaining:target===null?null:Math.max(0,target-earned),mode:manualTarget===null?'daily-remaining':'manual',triggered,attempted,message,cap:quota?.cap??null,dailyBeforeRun:quota?.total??null,source:quota?.source||''}}
+  function setEnabled(value){enabled=!!value;check()}
+  function status(){return {enabled,target,earned,remaining:target===null?null:Math.max(0,target-earned),mode:invalidTarget?'invalid':manualTarget===null?'daily-remaining':'manual',triggered,attempted,message,cap:quota?.cap??null,dailyBeforeRun:quota?.total??null,source:quota?.source||''}}
   function paint(){
     if(!ui)return;
     if(!ui.dirty&&document.activeElement!==ui.input)ui.input.value=target===null?'':String(target);
-    ui.input.placeholder=target===null?'读取额度中…':'';
+    ui.input.placeholder=invalidTarget?'请输入目标':target===null?'读取额度中…':'';
+    ui.input.setAttribute('aria-invalid',String(invalidTarget));
+    ui.toggle.textContent=enabled?'开启':'关闭';ui.toggle.setAttribute('aria-pressed',String(enabled));
+    ui.toggle.style.background=enabled?'#badcc3':'#263c30';ui.toggle.style.color=enabled?'#193222':'#c4d5c9';
     ui.progress.textContent=message;
-    ui.source.textContent=manualTarget===null?'默认：今日剩余战斗额度':'已设置手动目标';
   }
   function mount(parent){
-    const box=document.createElement('section'),label=document.createElement('label'),input=document.createElement('input'),actions=document.createElement('div'),apply=document.createElement('button'),reset=document.createElement('button'),progress=document.createElement('p'),source=document.createElement('p');
-    box.style.cssText='margin:8px 0;font-size:11px';label.textContent='本局目标金币';input.type='number';input.min='0';input.step='1';input.setAttribute('aria-label','本局目标金币');input.style.cssText='box-sizing:border-box;width:100%;font:inherit;padding:5px;margin:5px 0';label.append(input);
-    apply.type=reset.type='button';apply.textContent='应用';reset.textContent='恢复默认';actions.style.cssText='display:flex;gap:6px';actions.append(apply,reset);
-    for(const button of [apply,reset])button.style.cssText='appearance:none;width:auto;min-width:64px;min-height:28px;padding:4px 10px;font:inherit;font-size:11px;line-height:1.5;color:#e6eee6;background:#243e2e;border:1px solid #63846b;border-radius:4px;cursor:pointer;text-shadow:none';
-    apply.style.background='#365b43';
-    progress.style.cssText=source.style.cssText='margin:5px 0;color:#bdd1c2;line-height:1.6';
-    input.oninput=()=>{if(ui)ui.dirty=true};
-    apply.onclick=()=>{if(setTarget(input.value)){ui.dirty=false;input.blur();apply.blur()}else progress.textContent='请输入大于或等于0的整数金币数'};
-    reset.onclick=()=>{ui.dirty=false;useDailyDefault();input.blur();reset.blur()};
-    box.append(label,actions,progress,source);parent.append(box);ui={box,input,progress,source,dirty:false};paint();
+    const box=document.createElement('section'),row=document.createElement('div'),label=document.createElement('label'),input=document.createElement('input'),toggle=document.createElement('button'),progress=document.createElement('p');
+    box.style.cssText='margin:8px 0;font-size:11px';row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:8px';
+    label.textContent='目标金币';label.style.cssText='display:flex;align-items:center;gap:8px';input.type='number';input.min='0';input.step='1';input.setAttribute('aria-label','本局目标金币');input.style.cssText='box-sizing:border-box;width:76px;font:inherit;padding:5px';label.append(input);
+    toggle.type='button';toggle.setAttribute('aria-label','目标金币到额退出');toggle.style.cssText='font:inherit;font-size:11px;border:1px solid #6c9479;border-radius:4px;padding:3px 10px;min-width:50px;cursor:pointer';
+    progress.style.cssText='margin:5px 0;color:#bdd1c2;line-height:1.6';
+    input.oninput=()=>{ui.dirty=true;if(setTarget(input.validity?.badInput?'':input.value))ui.dirty=false};
+    toggle.onclick=()=>{input.blur();toggle.blur();setEnabled(!enabled)};
+    row.append(label,toggle);box.append(row,progress);parent.append(box);ui={box,input,toggle,progress,dirty:false};paint();
   }
   const timer=setInterval(check,100);
-  window.__farmCombatGoal={setTarget,useDailyDefault,status,check,refresh,mount,remove:()=>{removed=true;clearInterval(timer);controller?.abort();ui?.box.remove();delete window.__farmCombatGoal}};
+  window.__farmCombatGoal={setTarget,setEnabled,status,check,refresh,mount,remove:()=>{removed=true;clearInterval(timer);controller?.abort();ui?.box.remove();delete window.__farmCombatGoal}};
   check();
 })();
 
@@ -2424,7 +2422,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
   document.getElementById('farm-verification-notice')?.remove();
   const original=[...panel.children],originalStyle=panel.getAttribute('style');
   const title=original[0],farm=document.getElementById('farm-auto-controls');
-  const rows=original.filter(n=>n!==title&&n!==farm&&n.querySelector?.('button[aria-pressed]'));
+  const rows=original.filter(n=>n!==title&&n!==farm&&n.tagName!=='FORM'&&n.querySelector?.('button[aria-pressed]'));
   const goal=original.find(n=>n.tagName==='FORM'),footer=original.at(-1);
   const detail=original.find(n=>n!==title&&n!==farm&&n!==goal&&n!==footer&&!rows.includes(n));
   if(!title||rows.length!==1||!goal)return;
@@ -2451,7 +2449,6 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 #farm-compact-controls details{border-top:1px solid #42604b;margin-top:12px;padding-top:9px}
 #farm-compact-controls summary{font-size:11px;color:#abc2af;cursor:pointer}
 #farm-compact-controls .fh-empty{font-size:11px;color:#abc2af;padding:4px 0 10px}
-#farm-compact-controls .fh-key-count{font-size:11px;color:#bdd1c2;margin:4px 0;font-variant-numeric:tabular-nums}
 #farm-compact-controls .fh-stats>div{border:0!important;padding:5px 0 0!important;margin:0!important;font-size:10px!important;color:#abc2af!important}
 #farm-compact-controls .fh-task-state{border-top:1px solid #42604b;padding-top:8px;margin:12px 0 0;font-size:10px;color:#c7d9c9;overflow-wrap:anywhere}
 #farm-compact-controls .fh-execution{margin-top:16px;padding:12px;background:#0d1b14;border:1px solid #304738;border-radius:7px;box-sizing:border-box}
@@ -2517,8 +2514,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
   }
   const empty=make('div','状态读取模式需要通过扩展启动。');empty.className='fh-empty';
   const battle=make('div');battle.className='fh-battle-controls';
-  const keyReadout=make('div');keyReadout.className='fh-key-count';
-  battle.append(...rows,keyReadout,goal);pages.battle.append(empty,battle);
+  battle.append(...rows,goal);pages.battle.append(empty,battle);
   window.__farmBattleReport?.mount(pages.battle);
   let battleStats=null;
   if(detail){battleStats=make('details');battleStats.className='fh-stats';battleStats.append(make('summary','战斗状态'),detail);pages.battle.append(battleStats)}
@@ -2582,7 +2578,6 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     const ready=!!window.__farmCombat;empty.hidden=ready||!onBattlePage;battle.hidden=!ready||!onBattlePage;if(battleStats)battleStats.hidden=!ready||!onBattlePage;
     let view=automation?.execution?.()||{status:'idle',title:'等待助手加载',reason:'',items:[],next:'',rows:[]};
     const visual=window.__farmCombat?.status?.();
-    keyReadout.textContent='按键 keys · '+(visual?.keyCount??'—')+' 次';
     if(onBattlePage&&(visual?.enabled||visual?.selecting||(tab==='battle'&&(visual?.phase==='error'||visual?.goldGoal?.triggered)))){
       view={status:visual.selecting?'waiting':visual.phase==='error'?'error':visual.phase==='running'?'running':'waiting',title:'战斗 · 生存优先',reason:visual.selecting?visual.perkMessage:visual.message||'等待状态',items:['怪物 '+(visual.enemies||0)+'（入场 '+(visual.entering||0)+' · 隐身 '+(visual.hiddenEnemies||0)+'） · 弹道 '+(visual.projectiles||0),'风暴 '+(visual.casts||0)+' 次 · 闪避 '+(visual.dodges||0)+' 次 · 已选升级 '+(visual.choices||0)+' 次'],next:'',rows:[{label:'状态',text:visual.recognized?'玩家状态正常 · 控制耗时 '+(visual.frameMs||0)+'ms':'等待有效状态'},{label:'策略',text:visual.riskLevel==='survive'?'优先生存':'等待判断'},{label:'效率',text:(visual.killsPerMinute==null?'统计中':visual.killsPerMinute+' 击杀/分')+' · 受击 '+(visual.hits||0)+' 次'},{label:'移动',text:'赶路闪避 '+(visual.travelDodges||0)+' 次 · 脱困 '+(visual.unsticks||0)+' 次'}]};
     }
@@ -2619,5 +2614,5 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 1.25.0 已开启；请查看面板中的游戏代码检查状态';
+  return '助手 1.25.1 已开启；请查看面板中的游戏代码检查状态';
 })();

@@ -1,7 +1,7 @@
 /* Per-run loot target. Read original state; leave through the game's original endRun. */
 (() => {
   window.__farmCombatGoal?.remove();
-  let quota=null,run=null,scene=null,target=null,manualTarget=null,attempted=false,triggered=false;
+  let quota=null,run=null,scene=null,target=null,manualTarget=null,attempted=false,triggered=false,enabled=false,invalidTarget=false;
   let earned=0,message='等待读取今日战斗额度',removed=false,busy=false,controller=null,lastTry=-Infinity,ui=null;
   const valid=n=>Number.isSafeInteger(n)&&n>=0;
   const gameScene=()=>(window.__farmGame||window.temp1)?.scene?.scenes?.find(s=>s.sys?.settings?.key==='battle');
@@ -36,6 +36,7 @@
     }
     readDisplay(s);
     const amount=gain(run);if(amount!==null)earned=amount;
+    if(invalidTarget){target=null;return}
     if(!run?.active){if(s?.mode==='lobby')earned=0;target=manualTarget??(quota&&Date.now()-quota.at<60000?quota.left:null);return}
     if(manualTarget!==null)target=manualTarget;
     else if(target===null&&quota&&Date.now()-quota.at<60000&&(!quota.consumed||quota.consumed===run)){
@@ -43,7 +44,7 @@
     }
   }
   async function refresh(){
-    if(removed||busy||blocked())return;
+    if(removed||busy||invalidTarget||blocked())return;
     const s=gameScene(),root=document.getElementById('battle-ui');
     if(!s||s.tut||!visible(root)||Date.now()-lastTry<15000)return;
     if(s.run?.active&&target!==null)return;
@@ -64,9 +65,10 @@
   }
   function check(){
     if(removed)return;sync();
-    if(!attempted&&target!==null)message='本局已获 '+earned+' / '+target+' 金币，达到后自动撤退结算';
-    if(!attempted&&run?.active&&!scene.tut&&!scene.hero?.dead&&['play','perk'].includes(scene.mode)&&!(scene.mode==='play'&&scene.paused)&&!blocked()&&window.__farmCombat?.status?.().enabled&&target!==null&&gain(run)!==null&&earned>=target){
-      attempted=true;window.__farmCombat.set('enabled',false);window.__farmBattleInput?.release();
+    if(!attempted&&invalidTarget)message='请输入大于或等于0的整数金币数';
+    else if(!attempted&&target!==null)message='本局已获 '+earned+' / '+target+' 金币'+(enabled?'，到额退出':'');
+    if(enabled&&!attempted&&run?.active&&!scene.tut&&!scene.hero?.dead&&['play','perk'].includes(scene.mode)&&!(scene.mode==='play'&&scene.paused)&&!blocked()&&target!==null&&gain(run)!==null&&earned>=target){
+      attempted=true;window.__farmCombat?.set?.('enabled',false);window.__farmBattleInput?.release();
       try{
         if(typeof scene.endRun!=='function')throw Error('游戏撤退入口不可用，请手动结束本局');
         scene.endRun(false);if(run.active)throw Error('撤退未生效，已关闭自动战斗，请手动结束本局');
@@ -77,32 +79,34 @@
     paint();void refresh();
   }
   function setTarget(value){
-    if(value===''||value===null||value===undefined||typeof value==='string'&&!value.trim())return false;
-    const n=Number(value);if(!valid(n))return false;
+    const empty=value===''||value===null||value===undefined||typeof value==='string'&&!value.trim();
+    const n=empty?NaN:Number(value);
+    invalidTarget=!valid(n);
+    if(invalidTarget){target=null;message='请输入大于或等于0的整数金币数';paint();return false}
     manualTarget=n;sync();paint();return true;
   }
-  function useDailyDefault(){manualTarget=null;target=null;sync();lastTry=-Infinity;paint();void refresh()}
-  function status(){return {target,earned,remaining:target===null?null:Math.max(0,target-earned),mode:manualTarget===null?'daily-remaining':'manual',triggered,attempted,message,cap:quota?.cap??null,dailyBeforeRun:quota?.total??null,source:quota?.source||''}}
+  function setEnabled(value){enabled=!!value;check()}
+  function status(){return {enabled,target,earned,remaining:target===null?null:Math.max(0,target-earned),mode:invalidTarget?'invalid':manualTarget===null?'daily-remaining':'manual',triggered,attempted,message,cap:quota?.cap??null,dailyBeforeRun:quota?.total??null,source:quota?.source||''}}
   function paint(){
     if(!ui)return;
     if(!ui.dirty&&document.activeElement!==ui.input)ui.input.value=target===null?'':String(target);
-    ui.input.placeholder=target===null?'读取额度中…':'';
+    ui.input.placeholder=invalidTarget?'请输入目标':target===null?'读取额度中…':'';
+    ui.input.setAttribute('aria-invalid',String(invalidTarget));
+    ui.toggle.textContent=enabled?'开启':'关闭';ui.toggle.setAttribute('aria-pressed',String(enabled));
+    ui.toggle.style.background=enabled?'#badcc3':'#263c30';ui.toggle.style.color=enabled?'#193222':'#c4d5c9';
     ui.progress.textContent=message;
-    ui.source.textContent=manualTarget===null?'默认：今日剩余战斗额度':'已设置手动目标';
   }
   function mount(parent){
-    const box=document.createElement('section'),label=document.createElement('label'),input=document.createElement('input'),actions=document.createElement('div'),apply=document.createElement('button'),reset=document.createElement('button'),progress=document.createElement('p'),source=document.createElement('p');
-    box.style.cssText='margin:8px 0;font-size:11px';label.textContent='本局目标金币';input.type='number';input.min='0';input.step='1';input.setAttribute('aria-label','本局目标金币');input.style.cssText='box-sizing:border-box;width:100%;font:inherit;padding:5px;margin:5px 0';label.append(input);
-    apply.type=reset.type='button';apply.textContent='应用';reset.textContent='恢复默认';actions.style.cssText='display:flex;gap:6px';actions.append(apply,reset);
-    for(const button of [apply,reset])button.style.cssText='appearance:none;width:auto;min-width:64px;min-height:28px;padding:4px 10px;font:inherit;font-size:11px;line-height:1.5;color:#e6eee6;background:#243e2e;border:1px solid #63846b;border-radius:4px;cursor:pointer;text-shadow:none';
-    apply.style.background='#365b43';
-    progress.style.cssText=source.style.cssText='margin:5px 0;color:#bdd1c2;line-height:1.6';
-    input.oninput=()=>{if(ui)ui.dirty=true};
-    apply.onclick=()=>{if(setTarget(input.value)){ui.dirty=false;input.blur();apply.blur()}else progress.textContent='请输入大于或等于0的整数金币数'};
-    reset.onclick=()=>{ui.dirty=false;useDailyDefault();input.blur();reset.blur()};
-    box.append(label,actions,progress,source);parent.append(box);ui={box,input,progress,source,dirty:false};paint();
+    const box=document.createElement('section'),row=document.createElement('div'),label=document.createElement('label'),input=document.createElement('input'),toggle=document.createElement('button'),progress=document.createElement('p');
+    box.style.cssText='margin:8px 0;font-size:11px';row.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:8px';
+    label.textContent='目标金币';label.style.cssText='display:flex;align-items:center;gap:8px';input.type='number';input.min='0';input.step='1';input.setAttribute('aria-label','本局目标金币');input.style.cssText='box-sizing:border-box;width:76px;font:inherit;padding:5px';label.append(input);
+    toggle.type='button';toggle.setAttribute('aria-label','目标金币到额退出');toggle.style.cssText='font:inherit;font-size:11px;border:1px solid #6c9479;border-radius:4px;padding:3px 10px;min-width:50px;cursor:pointer';
+    progress.style.cssText='margin:5px 0;color:#bdd1c2;line-height:1.6';
+    input.oninput=()=>{ui.dirty=true;if(setTarget(input.validity?.badInput?'':input.value))ui.dirty=false};
+    toggle.onclick=()=>{input.blur();toggle.blur();setEnabled(!enabled)};
+    row.append(label,toggle);box.append(row,progress);parent.append(box);ui={box,input,toggle,progress,dirty:false};paint();
   }
   const timer=setInterval(check,100);
-  window.__farmCombatGoal={setTarget,useDailyDefault,status,check,refresh,mount,remove:()=>{removed=true;clearInterval(timer);controller?.abort();ui?.box.remove();delete window.__farmCombatGoal}};
+  window.__farmCombatGoal={setTarget,setEnabled,status,check,refresh,mount,remove:()=>{removed=true;clearInterval(timer);controller?.abort();ui?.box.remove();delete window.__farmCombatGoal}};
   check();
 })();

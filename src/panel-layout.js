@@ -5,7 +5,7 @@
   document.getElementById('farm-verification-notice')?.remove();
   const original=[...panel.children],originalStyle=panel.getAttribute('style');
   const title=original[0],farm=document.getElementById('farm-auto-controls');
-  const rows=original.filter(n=>n!==title&&n!==farm&&n.querySelector?.('button[aria-pressed]'));
+  const rows=original.filter(n=>n!==title&&n!==farm&&n.tagName!=='FORM'&&n.querySelector?.('button[aria-pressed]'));
   const goal=original.find(n=>n.tagName==='FORM'),footer=original.at(-1);
   const detail=original.find(n=>n!==title&&n!==farm&&n!==goal&&n!==footer&&!rows.includes(n));
   if(!title||rows.length!==1||!goal)return;
@@ -32,7 +32,6 @@
 #farm-compact-controls details{border-top:1px solid #42604b;margin-top:12px;padding-top:9px}
 #farm-compact-controls summary{font-size:11px;color:#abc2af;cursor:pointer}
 #farm-compact-controls .fh-empty{font-size:11px;color:#abc2af;padding:4px 0 10px}
-#farm-compact-controls .fh-key-count{font-size:11px;color:#bdd1c2;margin:4px 0;font-variant-numeric:tabular-nums}
 #farm-compact-controls .fh-stats>div{border:0!important;padding:5px 0 0!important;margin:0!important;font-size:10px!important;color:#abc2af!important}
 #farm-compact-controls .fh-task-state{border-top:1px solid #42604b;padding-top:8px;margin:12px 0 0;font-size:10px;color:#c7d9c9;overflow-wrap:anywhere}
 #farm-compact-controls .fh-execution{margin-top:16px;padding:12px;background:#0d1b14;border:1px solid #304738;border-radius:7px;box-sizing:border-box}
@@ -98,8 +97,7 @@
   }
   const empty=make('div','状态读取模式需要通过扩展启动。');empty.className='fh-empty';
   const battle=make('div');battle.className='fh-battle-controls';
-  const keyReadout=make('div');keyReadout.className='fh-key-count';
-  battle.append(...rows,keyReadout,goal);pages.battle.append(empty,battle);
+  battle.append(...rows,goal);pages.battle.append(empty,battle);
   window.__farmBattleReport?.mount(pages.battle);
   let battleStats=null;
   if(detail){battleStats=make('details');battleStats.className='fh-stats';battleStats.append(make('summary','战斗状态'),detail);pages.battle.append(battleStats)}
@@ -163,7 +161,6 @@
     const ready=!!window.__farmCombat;empty.hidden=ready||!onBattlePage;battle.hidden=!ready||!onBattlePage;if(battleStats)battleStats.hidden=!ready||!onBattlePage;
     let view=automation?.execution?.()||{status:'idle',title:'等待助手加载',reason:'',items:[],next:'',rows:[]};
     const visual=window.__farmCombat?.status?.();
-    keyReadout.textContent='按键 keys · '+(visual?.keyCount??'—')+' 次';
     if(onBattlePage&&(visual?.enabled||visual?.selecting||(tab==='battle'&&(visual?.phase==='error'||visual?.goldGoal?.triggered)))){
       view={status:visual.selecting?'waiting':visual.phase==='error'?'error':visual.phase==='running'?'running':'waiting',title:'战斗 · 生存优先',reason:visual.selecting?visual.perkMessage:visual.message||'等待状态',items:['怪物 '+(visual.enemies||0)+'（入场 '+(visual.entering||0)+' · 隐身 '+(visual.hiddenEnemies||0)+'） · 弹道 '+(visual.projectiles||0),'风暴 '+(visual.casts||0)+' 次 · 闪避 '+(visual.dodges||0)+' 次 · 已选升级 '+(visual.choices||0)+' 次'],next:'',rows:[{label:'状态',text:visual.recognized?'玩家状态正常 · 控制耗时 '+(visual.frameMs||0)+'ms':'等待有效状态'},{label:'策略',text:visual.riskLevel==='survive'?'优先生存':'等待判断'},{label:'效率',text:(visual.killsPerMinute==null?'统计中':visual.killsPerMinute+' 击杀/分')+' · 受击 '+(visual.hits||0)+' 次'},{label:'移动',text:'赶路闪避 '+(visual.travelDodges||0)+' 次 · 脱困 '+(visual.unsticks||0)+' 次'}]};
     }
