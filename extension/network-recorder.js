@@ -5,7 +5,7 @@
   const requests=new Map(),runs=new Map();
   const recovered=(async()=>{
     const saved=(await chrome.storage.session.get(KEY))[KEY];
-    if(saved?.active){saved.active=false;saved.stoppedAt=Date.now();saved.reason=saved.kind==='assistant-test'?'后台重启，记录已中断；助手开关未改变':'后台重启，记录已中断；自动开关仍关闭';await chrome.storage.session.set({[KEY]:saved});await chrome.debugger.detach({tabId:saved.tabId}).catch(()=>{})}
+    if(saved?.active){saved.active=false;saved.stoppedAt=Date.now();saved.reason=saved.kind==='assistant-test'?'后台重启，记录已中断；助手开关未改变':'后台重启，记录已中断；自动开关仍关闭';await chrome.storage.session.set({[KEY]:saved});await FarmDebugger.recover(saved.tabId).catch(()=>{})}
   })();
   const command=(method,params={})=>chrome.debugger.sendCommand({tabId:session.tabId},method,params);
   const text=s=>String(s).slice(0,500).replace(/0x[a-f0-9]{20,}/gi,'[地址已脱敏]').replace(/eyJ[\w.-]{30,}/g,'[令牌已脱敏]');
@@ -45,7 +45,7 @@
       if(session){session.active=false;session.reason=reason;session.stoppedAt=Date.now();for(const row of requests.values())row.responsePendingAtStop=true;await persist().catch(()=>{});
         // Only the manual baseline owns a pause flag; assistant recording is observational.
         if(attached&&session.kind==='manual-baseline')await command('Runtime.evaluate',{expression:'delete window.__farmManualCapture',returnByValue:true}).catch(()=>{});
-        if(attached)await chrome.debugger.detach({tabId:session.tabId}).catch(()=>{});
+        if(attached){await command('Network.disable').catch(()=>{});await FarmDebugger.release(session.tabId,'recorder').catch(()=>{})}
       }
     }finally{attached=false;clearTimeout(timer);requests.clear();runs.clear();stopping=false}
     return status();
@@ -60,7 +60,7 @@
     if(session?.active)throw Error('记录已经开启，请先完成本次测试');
     const tab=(await chrome.tabs.query({active:true,currentWindow:true}))[0];
     if(!tab||new URL(tab.url).origin!=='https://farmingseason.io')throw Error('请先切到游戏页面');
-    await chrome.debugger.attach({tabId:tab.id},'1.3');
+    await FarmDebugger.acquire(tab.id,'recorder');
     session={schema:1,kind,tabId:tab.id,active:false,startedAt:Date.now(),records:[],notes:['只记录允许的同站游戏操作接口；不保存请求头、Cookie、钱包地址、签名或会话令牌。','请求和响应按字段白名单保留；不是原始完整 HAR，也不能揭示服务器内部判定规则。',kind==='assistant-test'?'助手测试：不改变任何自动开关或游戏统计；类型为用户选定标签，不代表每个动作均由助手执行。':'手动对照：开始时关闭自动开关，结束后保持关闭。']};attached=true;
     try{
       const expression=kind==='assistant-test'?`(() => {
@@ -68,7 +68,7 @@
         const version=window.__farmLauncher?.status?.().version;
         if(version!==${JSON.stringify(helperVersion)})throw Error('请先开启新版助手');
         if(window.__farmManualCapture)throw Error('页面仍处于手动测试暂停，请先刷新并开启新版助手');
-        return {version,battleEnabled:!!window.__farmCombat?.status?.().enabled,farmFlags:window.__farmAutomation?.status?.().flags||{}};
+        return {version,inputTransport:window.__farmBattleInput?.status?.().transport||'unknown',battleEnabled:!!window.__farmCombat?.status?.().enabled,farmFlags:window.__farmAutomation?.status?.().flags||{}};
       })()`:`(() => {
         if(location.origin!=='https://farmingseason.io')throw Error('页面已变化');
         if(window.__farmLauncher?.status?.().version!==${JSON.stringify(helperVersion)})throw Error('请先开启新版助手');
@@ -81,7 +81,7 @@
       const result=await command('Runtime.evaluate',{expression,returnByValue:true});
       const accepted=kind==='assistant-test'?result.result?.value?.version===helperVersion:result.result?.value===true;
       if(result.exceptionDetails||!accepted)throw Error(result.exceptionDetails?.exception?.description||'无法确认测试状态');
-      if(kind==='assistant-test')session.automationAtStart=result.result.value;
+      if(kind==='assistant-test'){session.automationAtStart=result.result.value;session.notes.push('战斗输入为浏览器派发的自动键盘操作，不代表真人；原始统计由游戏生成。')}
       await command('Network.enable',{maxTotalBufferSize:2097152,maxResourceBufferSize:262144,maxPostDataSize:65536});
       session.active=true;await persist();timer=setTimeout(()=>{void stop('已到30分钟上限')},TTL);
       return {...await status(),message:kind==='assistant-test'?'助手测试记录已开始，原有自动开关保持不变。请自行开启需要测试的功能、手动开局；完成后停止并导出。':'手动测试记录已开始，所有自动开关已关闭。请手动操作；完成后停止并导出。顶部调试提示在记录期间保留。'};

@@ -20,3 +20,14 @@
   observer.observe(document.documentElement,{childList:true,subtree:true});
   document.addEventListener('visibilitychange',schedule);schedule();
 })();
+
+/* Narrow bridge: top-level same-origin page -> this extension's battle input only. */
+(() => {
+  if(window.top!==window||location.origin!=='https://farmingseason.io')return;
+  window.addEventListener('message',async e=>{
+    if(e.source!==window||e.origin!==location.origin||e.data?.channel!=='farm-input-request')return;
+    const {id,keys,stop=false}=e.data;if(typeof id!=='string'||id.length>80||!Array.isArray(keys)||keys.length>6)return;
+    let result;try{result=await chrome.runtime.sendMessage({operation:'battle-input',keys,stop})}catch(error){result={ok:false,message:error.message}}
+    window.postMessage({channel:'farm-input-result',id,ok:result?.ok===true,message:result?.message||''},location.origin);
+  });
+})();

@@ -27,7 +27,7 @@ class DistributionTests(unittest.TestCase):
         manifest = json.loads((ROOT / 'extension/manifest.json').read_text())
         self.assertIn('helper ' + manifest['version'], bundle.read_text())
         with zipfile.ZipFile(ROOT / 'dist/农耕战斗助手.zip') as archive:
-            self.assertEqual(len(archive.namelist()), 8)
+            self.assertEqual(len(archive.namelist()), 10)
             for name in archive.namelist():
                 self.assertEqual(archive.read(name), (ROOT / 'extension' / Path(name).name).read_bytes())
 
@@ -35,7 +35,7 @@ class DistributionTests(unittest.TestCase):
 @unittest.skipUnless(shutil.which('node'), 'Node.js is required for combat regression checks')
 class CombatTests(unittest.TestCase):
     def test_combat_regressions(self):
-        for name in ('test-battle-planner.cjs', 'test-page-combat.cjs', 'test-combat-perks.cjs', 'test-combat-goal.cjs', 'test-combat-return.cjs'):
+        for name in ('test-browser-keyboard.cjs', 'test-battle-planner.cjs', 'test-page-combat.cjs', 'test-combat-perks.cjs', 'test-combat-goal.cjs', 'test-combat-return.cjs'):
             with self.subTest(suite=name):
                 result = run('node', str(ROOT / 'tests' / name), cwd=ROOT)
                 self.assertEqual(result.returncode, 0, result.stdout)

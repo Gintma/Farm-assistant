@@ -1,4 +1,4 @@
-importScripts('network-recorder.js');
+importScripts('debugger-session.js','keyboard-input.js','network-recorder.js');
 const working=new Set();
 const call=(target,method,params={})=>chrome.debugger.sendCommand(target,method,params);
 function check(result){
@@ -52,7 +52,7 @@ async function perform(operation, tabOverride=null){
   if(working.has(tab.id))throw Error('正在处理，请稍候');working.add(tab.id);
   const target={tabId:tab.id};let attached=false;
   try{
-    await chrome.debugger.attach(target,'1.3');attached=true;
+    await FarmDebugger.acquire(tab.id,'launcher');attached=true;
     const origin=check(await call(target,'Runtime.evaluate',{expression:'location.origin',returnByValue:true}));
     if(origin?.value!=='https://farmingseason.io')throw Error('页面已变化，已取消');
     if(operation==='remove'){
@@ -84,7 +84,7 @@ async function perform(operation, tabOverride=null){
     check(await call(target,'Runtime.evaluate',{expression:source,returnByValue:true}));
     return {ok:true,message:'助手已开启。在田地、动物、作坊、日常页勾选功能；花金币需先设置预算。'};
   }finally{
-    if(attached){await call(target,'Runtime.releaseObjectGroup',{objectGroup:'farm-helper'}).catch(()=>{});await chrome.debugger.detach(target).catch(()=>{});}
+    if(attached){await call(target,'Runtime.releaseObjectGroup',{objectGroup:'farm-helper'}).catch(()=>{});await FarmDebugger.release(tab.id,'launcher').catch(()=>{});}
     working.delete(tab.id);
   }
 }
@@ -92,6 +92,10 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
   if(sender.id!==chrome.runtime.id)return;
   const content=!!sender.tab;
   if(content){
+    if(message.operation==='battle-input'){
+      if(sender.frameId!==0||!sender.url?.startsWith('https://farmingseason.io/'))return;
+      FarmKeyboard.send(sender.tab.id,message.keys,message.stop,sender.url).then(reply).catch(e=>reply({ok:false,message:e.message}));return true;
+    }
     if(message.operation!=='auto-start'||sender.frameId!==0||!sender.url?.startsWith('https://farmingseason.io/'))return;
     (async()=>{
       if(globalThis.FarmManualRecorder?.isActive())return {ok:true,disabled:true};

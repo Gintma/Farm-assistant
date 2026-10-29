@@ -487,7 +487,8 @@
     if(!Object.values(flags).some(Boolean)){controller?.abort();releaseIfIdle()}
     message=flags[key]?'等待检查农务':'已暂停后续自动操作';syncControls();render();return true;
   }
-  function onManual(e){if(!e.isTrusted||Object.values(sections).some(s=>s.contains(e.target))||e.target?.closest?.('#farm-compact-controls'))return;manualUntil=performance.now()+15000;route=null;activeMark=null}
+  function onManual(e){if(window.__farmBattleInput?.owns?.(e))return;
+    if(!e.isTrusted||Object.values(sections).some(s=>s.contains(e.target))||e.target?.closest?.('#farm-compact-controls'))return;manualUntil=performance.now()+15000;route=null;activeMark=null}
   function onKey(e){onManual(e);if(e.isTrusted&&e.code==='Escape'){for(const key of Object.keys(flags)){flags[key]=false;changedFlags.add(key)}saveFlags();activity?.add('setting','Esc 已停止自动农务');epoch++;route=null;controller?.abort();releaseIfIdle();syncControls();message='已停止自动农务；已提交任务由游戏继续处理';render()}}
   document.addEventListener('pointerdown',onManual,true);window.addEventListener('keydown',onKey,true);
   const el=(tag,text)=>{const x=document.createElement(tag);if(text)x.textContent=text;return x};

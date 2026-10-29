@@ -5,7 +5,7 @@ import zipfile
 root = Path(__file__).resolve().parents[1]
 bot = root / 'src'
 ext = root / 'extension'
-version = '1.23.1'
+version = '1.24.0'
 modules = [
     'battle-planner.js', 'update-catalog.js', 'compatibility.js', 'version-guard.js', 'activity-store.js',
     'verification-guard.js', 'farm-rules.js', 'workshop-rules.js',
@@ -14,7 +14,7 @@ modules = [
     'compact-panel.js', 'panel-layout.js',
 ]
 distribution = [
-    'manifest.json', 'background.js', 'launcher.js', 'network-recorder.js',
+    'manifest.json', 'background.js', 'debugger-session.js', 'keyboard-input.js', 'launcher.js', 'network-recorder.js',
     'popup.html', 'popup.js', 'auto-start.js', '安装说明.md',
 ]
 head = '''/* Farming Season helper __HELPER_VERSION__: original combat mechanics and unified controls. */

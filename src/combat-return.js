@@ -8,7 +8,7 @@
   const scene=()=>(window.__farmGame||window.temp1)?.scene?.scenes?.find(s=>s.sys?.settings?.key==='battle');
   function resetWait(message){idleSince=null;state={phase:'waiting',message,remaining:null}}
   function manual(e){
-    if(!e.isTrusted)return;
+    if(!e.isTrusted||window.__farmBattleInput?.owns?.(e))return;
     lastInput=performance.now();idleSince=null;
     if(e.type==='keydown'){keys.add(e.code);if(e.code==='Escape'&&run)cancelled=true}
     if(e.type==='keyup')keys.delete(e.code);

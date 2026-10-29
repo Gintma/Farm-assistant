@@ -1,9 +1,9 @@
-/* Farming Season helper 1.23.1: original combat mechanics and unified controls. */
+/* Farming Season helper 1.24.0: original combat mechanics and unified controls. */
 (() => {
   if(location.hostname!=='farmingseason.io')throw Error('请只在 Farming Season 游戏页启动');
   const temp1=window.__farmGame||window.temp1;
   if(!temp1?.scene?.scenes)throw Error('未找到游戏实例，请使用扩展启动');
-  if(window.__farmLauncher?.status?.().version==='1.23.1')return '助手已开启，保留当前所有开关';
+  if(window.__farmLauncher?.status?.().version==='1.24.0')return '助手已开启，保留当前所有开关';
   const handoff={farm:window.__farmAutoFarm?.status?.(),automation:window.__farmAutomation?.status?.(),layout:window.__farmLayout?.status?.()};
   if(handoff.farm?.pending)throw Error('旧版农活尚未完成，请等队列完成后再次开启新版助手');
   window.__farmLauncher?.remove();
@@ -14,7 +14,7 @@
   function cleanup(){
     window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();window.__farmCompatibility?.remove();delete window.__farmUpdateCatalog;
   }
-  window.__farmLauncher={status:()=>({installed:true,version:'1.23.1',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
+  window.__farmLauncher={status:()=>({installed:true,version:'1.24.0',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{
 /* Pure planning over read-only snapshots. Inputs are regular direction/Space/E keys. */
 (() => {
@@ -1695,7 +1695,8 @@ window.__farmUpdateCatalog=Object.freeze({
     if(!Object.values(flags).some(Boolean)){controller?.abort();releaseIfIdle()}
     message=flags[key]?'等待检查农务':'已暂停后续自动操作';syncControls();render();return true;
   }
-  function onManual(e){if(!e.isTrusted||Object.values(sections).some(s=>s.contains(e.target))||e.target?.closest?.('#farm-compact-controls'))return;manualUntil=performance.now()+15000;route=null;activeMark=null}
+  function onManual(e){if(window.__farmBattleInput?.owns?.(e))return;
+    if(!e.isTrusted||Object.values(sections).some(s=>s.contains(e.target))||e.target?.closest?.('#farm-compact-controls'))return;manualUntil=performance.now()+15000;route=null;activeMark=null}
   function onKey(e){onManual(e);if(e.isTrusted&&e.code==='Escape'){for(const key of Object.keys(flags)){flags[key]=false;changedFlags.add(key)}saveFlags();activity?.add('setting','Esc 已停止自动农务');epoch++;route=null;controller?.abort();releaseIfIdle();syncControls();message='已停止自动农务；已提交任务由游戏继续处理';render()}}
   document.addEventListener('pointerdown',onManual,true);window.addEventListener('keydown',onKey,true);
   const el=(tag,text)=>{const x=document.createElement(tag);if(text)x.textContent=text;return x};
@@ -1907,40 +1908,77 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     remove:()=>{removed=true;clearInterval(timer);controller?.abort();root.remove();delete window.__farmEarnings}};
 })();
 
-/* Page-local input adapter. Uses existing Phaser keys and scene skill entry points. */
+/* Browser keyboard automation. No direct key-state driving, skill calls or telemetry edits. */
 (() => {
   window.__farmBattleInput?.remove();
+  const allowed=new Set(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space','KeyE']);
   const names={ArrowLeft:'LEFT',ArrowRight:'RIGHT',ArrowUp:'UP',ArrowDown:'DOWN'};
-  const held=new Map();
-  let lease=null;
-  function event(){return {timeStamp:performance.now(),altKey:false,ctrlKey:false,shiftKey:false,metaKey:false,location:0}}
+  const pending=new Map(),expected=new Map(),observed=new Set(),owned=new WeakSet();
+  let sequence=0,epoch=0,busy=false,desired=null,used=false,released=true,removed=false,lease=null,lastScene=null;
+  let completed={casts:0,dodges:0,travelDodges:0};
+  function owns(e){
+    if(owned.has(e))return true;if(!e.isTrusted)return false;
+    for(const [id,x]of expected){if(performance.now()>x.until){expected.delete(id);continue}if(x.code===e.code&&x.type===e.type){expected.delete(id);observed.add(id);owned.add(e);return true}}
+    return false;
+  }
+  function expect(code,type,id){if(removed||!allowed.has(code)||!['keydown','keyup'].includes(type)||typeof id!=='string')return false;expected.set(id,{code,type,until:performance.now()+500});return true}
+  function consume(id){expected.delete(id);const seen=observed.delete(id);return seen}
+  function reply(e){
+    if(e.source!==window||e.origin!==location.origin||e.data?.channel!=='farm-input-result')return;
+    const x=pending.get(e.data.id);if(!x)return;pending.delete(e.data.id);clearTimeout(x.timer);
+    e.data.ok?x.resolve():x.reject(Error(e.data.message||'自动键盘输入失败'));
+  }
+  function request(keys,stop=false){
+    used=true;return new Promise((resolve,reject)=>{
+      const id='keyboard-'+Date.now()+'-'+(++sequence),timer=setTimeout(()=>{pending.delete(id);reject(Error('浏览器输入连接超时，请重新开启助手'))},1500);
+      pending.set(id,{resolve,reject,timer});
+      try{window.postMessage({channel:'farm-input-request',id,keys,stop},location.origin)}catch(e){pending.delete(id);clearTimeout(timer);reject(e)}
+    });
+  }
+  function fallback(){
+    // Stop/fault cleanup only: clear stuck movement. This path never drives play or changes stats.
+    try{lastScene?.input?.keyboard?.resetKeys?.()}catch{}
+  }
   function release(){
-    clearTimeout(lease);lease=null;
-    for(const key of held.keys())try{key.onUp(event())}catch{}
-    held.clear();
+    epoch++;desired=null;clearTimeout(lease);lease=null;expected.clear();observed.clear();completed={casts:0,dodges:0,travelDodges:0};
+    if(!used||released)return Promise.resolve();released=true;fallback();
+    return request([],true).catch(()=>{fallback()});
+  }
+  function prepare(){
+    const s=lastScene,h=s?.hero,root=document.getElementById('battle-ui');
+    const visible=e=>!!e&&!e.hidden&&!!e.getClientRects().length;
+    if(removed||window.__farmManualCapture||window.__farmVersionGuard?.isBlocked('battle')||window.__farmVerification?.isBlocked?.()||!window.__farmCombat?.status?.().enabled||window.__farmCombat?.status?.().manualPaused||document.hidden||s?.mode!=='play'||s.paused||h?.dead||!(s.run?.active||s.tut)||!visible(root)||visible(root.querySelector('.bui-screen')))return false;
+    if(document.activeElement?.matches?.('input,textarea,select,[contenteditable="true"]'))return false;
+    if([...document.querySelectorAll('#modal,[role="dialog"],.cf-turnstile,iframe[src*="challenges.cloudflare.com"]')].some(visible))return false;
+    const canvas=document.querySelector('#game canvas');if(!visible(canvas))return false;
+    if(document.activeElement?.closest?.('#farm-compact-controls'))document.activeElement.blur();
+    canvas.focus?.({preventScroll:true});return true;
+  }
+  async function pump(){
+    if(busy||!desired||removed)return;
+    const task=desired;desired=null;busy=true;const generation=epoch,s=task.scene;
+    const before={dodges:s.run?.dodges||0,storm:s.hero.stormT};
+    try{
+      await request(task.keys);
+      if(!removed&&generation===epoch){const dodges=Math.max(0,(s.run?.dodges||0)-before.dodges);completed.dodges+=dodges;if(task.intent==='travel')completed.travelDodges+=dodges;if(task.keys.includes('KeyE')&&before.storm<0&&s.hero.stormT>=0)completed.casts++}
+    }catch(error){
+      if(!removed&&generation===epoch){fallback();window.__farmCombat?.fail?.(error.message)}
+    }finally{busy=false;if(desired&&!removed)void pump()}
   }
   function apply(scene,action){
-    if(window.__farmManualCapture||window.__farmVersionGuard?.isBlocked('battle')||scene.mode!=='play'||scene.paused||scene.hero?.dead||!(scene.run?.active||scene.tut)){release();return {casts:0,dodges:0}}
-    const wanted=new Set(action.keys.filter(k=>names[k]).map(k=>scene.keys?.[names[k]]));
-    if(wanted.has(undefined)||[...wanted].some(k=>typeof k.onDown!=='function'||typeof k.onUp!=='function'))throw Error('游戏输入结构已变化，请关闭自动战斗');
-    for(const key of held.keys())if(!wanted.has(key)){key.onUp(event());held.delete(key)}
-    for(const key of wanted)if(!held.has(key)){
-      // Do not take ownership of a key already held by the player.
-      if(key.isDown)continue;
-      held.set(key,true);key.onDown(event());
-    }
-    clearTimeout(lease);lease=setTimeout(release,350);
-    let casts=0,dodges=0;
-    if(action.keys.includes('KeyE')){
-      if(typeof scene.doStorm!=='function')throw Error('风暴入口已变化');
-      const before=scene.hero.stormT;scene.doStorm();casts=before<0&&scene.hero.stormT>=0?1:0;
-    }else if(action.keys.includes('Space')){
-      if(typeof scene.doDodge!=='function')throw Error('闪避入口已变化');
-      const before=scene.hero.dodgeT;scene.doDodge();dodges=before<0&&scene.hero.dodgeT>=0?1:0;
-    }
-    return {casts,dodges};
+    if(removed||window.__farmManualCapture||window.__farmVersionGuard?.isBlocked('battle')||scene.mode!=='play'||scene.paused||scene.hero?.dead||!(scene.run?.active||scene.tut)){void release();return {casts:0,dodges:0,travelDodges:0}}
+    const keys=action.keys;if(!Array.isArray(keys)||keys.some(k=>!allowed.has(k)))throw Error('游戏输入格式已变化');
+    for(const code of keys.filter(k=>names[k]))if(typeof scene.keys?.[names[code]]?.isDown!=='boolean')throw Error('游戏键盘结构已变化，请关闭自动战斗');
+    lastScene=scene;released=false;desired={scene,keys:[...keys],intent:action.intent};
+    const result=completed;completed={casts:0,dodges:0,travelDodges:0};void pump();
+    clearTimeout(lease);lease=setTimeout(()=>{void release()},350);return result;
   }
-  window.__farmBattleInput={apply,release,remove:()=>{release();delete window.__farmBattleInput}};
+  window.addEventListener('message',reply);
+  window.__farmBattleInput={apply,release,prepare,expect,consume,owns,status:()=>({transport:'browser-keyboard',busy,pending:pending.size}),remove:()=>{
+    void release();removed=true;window.removeEventListener('message',reply);expected.clear();observed.clear();
+    // Release was sent before removal; local movement is already cleared.
+    for(const x of pending.values()){clearTimeout(x.timer);x.reject(Error('战斗输入已移除'))}pending.clear();delete window.__farmBattleInput;
+  }};
 })();
 
 /* Read combat snapshots and drive original page-local input; never replace combat methods. */
@@ -1963,7 +2001,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     if(!enabled){release();state={...state,phase:'idle',message:'自动战斗已关闭'}}
   }
   function manual(e){
-    if(!e.isTrusted)return;
+    if(!e.isTrusted||window.__farmBattleInput?.owns?.(e))return;
     if(e.type==='keydown'&&e.code==='Escape'){set('enabled',false);return}
     if(['keydown','pointerdown'].includes(e.type)&&e.target?.closest?.('#farm-compact-controls'))return;
     if(e.type==='keyup'&&!manualKeys.has(e.code))return;
@@ -2043,11 +2081,11 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
       if(action.keys.includes('KeyE'))skillAt.storm=now;
       if(action.keys.includes('Space'))skillAt.dodge=now;
       const seconds=Number.isFinite(s.run?.seconds)?s.run.seconds:0,kills=Number.isFinite(s.run?.kills)?s.run.kills:0;
-      state={...state,phase:'running',message:action.message,target:action.target||'',enemies:frame.enemies.length,entering:frame.enemies.filter(e=>e.state==='enter').length,hiddenEnemies:frame.enemies.filter(e=>e.phased||e.state==='appear').length,attackable:frame.enemies.filter(e=>e.hittable&&e.state!=='enter').length,projectiles:frame.projectiles.length,recognized:true,frameMs:Math.round(performance.now()-started),casts:state.casts+result.casts,dodges:state.dodges+result.dodges,travelDodges:state.travelDodges+(action.intent==='travel'?result.dodges:0),intent:action.intent,riskLevel:action.riskLevel,killsPerMinute:seconds>=15?Math.round(kills*60/seconds):null,hits:s.run?.hits??0,threats:action.threats||0,hp:h.hp,wave:s.wave};
+      state={...state,phase:'running',message:action.message,target:action.target||'',enemies:frame.enemies.length,entering:frame.enemies.filter(e=>e.state==='enter').length,hiddenEnemies:frame.enemies.filter(e=>e.phased||e.state==='appear').length,attackable:frame.enemies.filter(e=>e.hittable&&e.state!=='enter').length,projectiles:frame.projectiles.length,recognized:true,frameMs:Math.round(performance.now()-started),casts:state.casts+result.casts,dodges:state.dodges+result.dodges,travelDodges:state.travelDodges+(result.travelDodges??(action.intent==='travel'?result.dodges:0)),intent:action.intent,riskLevel:action.riskLevel,killsPerMinute:seconds>=15?Math.round(kills*60/seconds):null,hits:s.run?.hits??0,threats:action.threats||0,hp:h.hp,wave:s.wave};
     }catch(error){set('enabled',false);state={...state,phase:'error',message:error.message}}
   }
   const timer=setInterval(observe,60);
-  window.__farmCombat={set,status:()=>({...options,...state,goldGoal:window.__farmCombatGoal?.status?.(),manualPaused:Date.now()<manualUntil||manualKeys.size>0||manualPointer,choices:window.__farmCombatPerks?.status?.().choices??state.choices,perkMessage:window.__farmCombatPerks?.status?.().message,selecting:options.enabled&&window.__farmCombatPerks?.status?.().waiting}),remove:()=>{
+  window.__farmCombat={set,fail:message=>{set('enabled',false);state={...state,phase:'error',message}},status:()=>({...options,...state,inputTransport:window.__farmBattleInput?.status?.().transport,goldGoal:window.__farmCombatGoal?.status?.(),manualPaused:Date.now()<manualUntil||manualKeys.size>0||manualPointer,choices:window.__farmCombatPerks?.status?.().choices??state.choices,perkMessage:window.__farmCombatPerks?.status?.().message,selecting:options.enabled&&window.__farmCombatPerks?.status?.().waiting}),remove:()=>{
     set('enabled',false);clearInterval(timer);mortarTracks.clear();window.__farmCombatPerks?.remove();
     window.removeEventListener('keydown',manual,true);window.removeEventListener('keyup',manual,true);window.removeEventListener('pointerdown',manual,true);window.removeEventListener('pointerup',manual,true);window.removeEventListener('pointercancel',manual,true);window.removeEventListener('blur',blur);window.removeEventListener('pagehide',hide);document.removeEventListener('visibilitychange',visibility);
     window.__farmBattleInput?.remove();delete window.__farmCombat;
@@ -2215,7 +2253,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
   const scene=()=>(window.__farmGame||window.temp1)?.scene?.scenes?.find(s=>s.sys?.settings?.key==='battle');
   function resetWait(message){idleSince=null;state={phase:'waiting',message,remaining:null}}
   function manual(e){
-    if(!e.isTrusted)return;
+    if(!e.isTrusted||window.__farmBattleInput?.owns?.(e))return;
     lastInput=performance.now();idleSince=null;
     if(e.type==='keydown'){keys.add(e.code);if(e.code==='Escape'&&run)cancelled=true}
     if(e.type==='keyup')keys.delete(e.code);
@@ -2289,7 +2327,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
   function render(){
     const s=window.__farmCombat?.status?.();
     for(const {key,button}of rows){const on=!!s?.[key];button.textContent=on?'开启':'关闭';button.style.background=on?'#badcc3':'#263c30';button.style.color=on?'#193222':'#c4d5c9';button.setAttribute('aria-pressed',String(on));button.disabled=!s}
-    note.textContent='生存优先：危险先撤离，小史莱姆优先走位；安全赶路闪避。波末随机安全区域等待，升级等待 1.1～3.5 秒。手动开局，Esc 停止。';
+    note.textContent='浏览器键盘自动输入，战斗时保留顶部调试提示。生存优先：危险先撤离，小史莱姆优先走位；安全赶路闪避。波末随机安全区域等待，升级等待 1.1～3.5 秒。手动开局，Esc 停止。';
     detail.textContent=(s?.selecting?s.perkMessage:s?.message||'等待扩展连接')+' · 目标 '+(s?.enemies??0)+' · 弹道 '+(s?.projectiles??0)+' · 风暴 '+(s?.casts??0)+' 次 · 闪避 '+(s?.dodges??0)+' 次 · 升级 '+(s?.choices??0)+' 次';
   }
   const timer=setInterval(render,250);render();
@@ -2492,5 +2530,5 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 1.23.1 已开启；请查看面板中的游戏代码检查状态';
+  return '助手 1.24.0 已开启；请查看面板中的游戏代码检查状态';
 })();
