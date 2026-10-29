@@ -26,19 +26,31 @@ const point={x:330,y:250};f.player={...f.player,...point};assert.deepEqual(P.pla
 f=base();f.player.x=150;f.player.y=250;f.enemies=[enemy(1,50,170)];a=P.plan(f,{skills:false});assert(a.keys.includes('ArrowLeft')&&a.keys.includes('ArrowUp'),'legal corners remain approachable');
 f=base();f.enemies=[enemy(1,404,310,{hp:3,state:'idle',speed:0})];f.projectiles=[{x:310,y:304,vx:175,vy:0,kind:'arrow'}];a=P.plan(f,options);assert(a.danger);assert(a.keys.some(k=>k.startsWith('Arrow')),'incoming arrows override holding for an attack');
 f=base();f.player.stormRadius=95;f.enemies=[enemy(1,430,310),enemy(2,368,390)];f.projectiles=[{x:310,y:304,vx:175,vy:0,kind:'arrow'}];a=P.plan(f,{ready:{dodge:false,storm:true}});assert(a.danger);assert(!a.keys.includes('KeyE'),'do not slow an evaluated walking escape by starting storm');
-// Actual archer timings: early aim tracks until .5/.4s, release at .74/.6s.
+// Archer aiming and lock must not create phantom arrows, at any wave or windup time.
 const archer=()=>{const g=base();g.wave=9;g.enemies=[enemy(1,480,310,{hp:4,radius:7,speed:38,name:'archer',brain:'archer',state:'windup',t:.2,hitDone:false,lock:{x:368,y:306}})];return g};
 const walkingOnly={ready:{dodge:false,storm:false}};
-f=archer();a=P.plan(f,walkingOnly);assert.deepEqual(a.keys,['ArrowRight'],'close distance while the early aiming line is still tracking');
-f.enemies[0].t=.65;a=P.plan(f,walkingOnly);assert(a.keys.includes('ArrowRight'),'locked aim should not force a purely sideways retreat');assert(a.keys.includes('ArrowUp')||a.keys.includes('ArrowDown'),'approach off the locked firing line');
-// Independent time sampling checks that the chosen approach clears the actual arrow.
-let v=velocity(a.keys),nearest=Infinity;const ar=f.enemies[0],delay=.74-ar.t,dx=ar.lock.x-ar.x,dy=ar.lock.y-(ar.y-8),length=Math.hypot(dx,dy);
-for(let t=delay;t<=.9;t+=.001){const x=ar.x+dx/length*175*(t-delay),y=ar.y-8+dy/length*175*(t-delay);nearest=Math.min(nearest,Math.hypot(f.player.x+v.x*92*t-x,f.player.y-6+v.y*92*t-y))}assert(nearest>6,'diagonal approach avoids the game arrow hit radius');
-f=archer();f.wave=10;f.enemies[0].t=.45;a=P.plan(f,walkingOnly);assert(a.keys.includes('ArrowUp')||a.keys.includes('ArrowDown'),'wave10 faster lock is already a shooting threat');assert(P.threats(f).some(z=>Math.abs(z.eta-.15)<1e-8),'wave10 release countdown uses .6, not .74');
+for(const wave of [5,9,10,13])for(const t of [.2,.45,.65,.8]){
+ f=archer();f.wave=wave;f.enemies[0].t=t;a=P.plan(f,walkingOnly);
+ assert.deepEqual(P.threats(f),[],'unfired arrows never become danger zones');assert.equal(a.danger,false);
+ assert.deepEqual(a.keys,['ArrowRight'],'approach without dodging an unfired aiming line');
+}
+// Multiple locked shooters still do not trigger avoidance before any arrow is emitted.
+f=archer();f.enemies.push(enemy(2,368,190,{name:'archer',brain:'archer',state:'windup',t:.65,lock:{x:368,y:304}}));
+a=P.plan(f,walkingOnly);assert.equal(a.danger,false);assert.equal(P.threats(f).length,0);
+// Once an arrow exists, avoid its actual trajectory even if its shooter's state/lock is stale.
+f=archer();f.enemies[0].t=.65;f.projectiles=[{x:425,y:304,vx:-175,vy:0,kind:'arrow'}];
+a=P.plan(f,walkingOnly);assert(a.danger);assert(a.keys.includes('ArrowUp')||a.keys.includes('ArrowDown'),'step aside from an emitted arrow');
+let v=velocity(a.keys),nearest=Infinity;
+for(let t=0;t<=.8;t+=.001){const q=f.projectiles[0];nearest=Math.min(nearest,Math.hypot(f.player.x+v.x*92*t-q.x-q.vx*t,f.player.y-6+v.y*92*t-q.y-q.vy*t))}
+assert(nearest>6,'walking route clears the emitted arrow hit radius');
 f=archer();f.enemies[0].hitDone=true;f.enemies[0].t=.8;f.projectiles=[{x:350,y:304,vx:-175,vy:0,kind:'arrow'}];a=P.plan(f,walkingOnly);assert.deepEqual(a.keys,['ArrowRight'],'an already-passed arrow and cleared aim do not prevent closing');
 f=archer();f.enemies[0].state='chase';f.enemies[0].x=580;f.projectiles=[{x:300,y:100,vx:175,vy:0,kind:'arrow'}];assert.equal(P.plan(f,options).intent,'travel','an unrelated nearby arrow cannot disable every travel dash');
 f=archer();f.enemies[0].state='chase';f.projectiles=[{x:300,y:304,vx:175,vy:0,kind:'arrow'},{x:368,y:240,vx:0,vy:175,kind:'arrow'}];a=P.plan(f,walkingOnly);assert(a.danger);v=velocity(a.keys);nearest=Infinity;
 for(let t=0;t<=.8;t+=.001)for(const q of f.projectiles)nearest=Math.min(nearest,Math.hypot(f.player.x+v.x*92*t-q.x-q.vx*t,f.player.y-6+v.y*92*t-q.y-q.vy*t));assert(nearest>6,'real crossing arrows still get a safe walking escape');
+// Ignoring archer aim must not suppress other live hazards in the same frame.
+f=archer();f.enemies.push(enemy(2,380,310,{name:'bomber',state:'fuse',t:.55}));a=P.plan(f,options);assert(a.danger);assert(a.keys.includes('Space'));assert(P.threats(f).some(z=>z.source==='bomber'));
+f=archer();f.enemies.push(enemy(2,430,310,{name:'minotaur',boss:true,state:'charge',t:.8,chargeDir:{x:-1,y:0}}));assert(P.threats(f).some(z=>z.kind==='charge'),'Boss charge prediction is retained');
+f=archer();f.projectiles=[{x:425,y:304,vx:-175,vy:0,kind:'fireball'}];assert(P.plan(f,walkingOnly).danger,'emitted fireballs still trigger avoidance');
 console.log('PASS: mixed boss/minion priorities, reachable shooters, crowded-gate retreat, low-HP/density travel reservations, emergency blast dodge, walking baby escape, ordinary attacks, ghost/entry tracking, continuous safe rally and corner access');
 
-console.log('PASS: archer tracking/lock/release phases, wave10 timing, advancing off the firing line, passed/unrelated arrows and independent crossing-trajectory safety checks');
+console.log('PASS: unfired archer aim ignored across waves, emitted arrows avoided, passed/unrelated arrows and independent crossing-trajectory safety checks');

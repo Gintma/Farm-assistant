@@ -23,15 +23,7 @@
       }
       if(e.brain==='ghost'&&e.state==='appear'&&finite(e.lock))zones.push({kind:'circle',x:e.lock.x,y:e.lock.y,radius:(e.radius||12)+25,eta:Math.max(0,.6-e.t),message:'避开幽灵即将显形的位置'});
       if(e.hitDone)continue;
-      if(e.brain==='archer'&&e.state==='windup'&&finite(e.lock)){
-        const late=frame.wave>=10,lockAt=late ? .4 : .5,fireAt=late ? .6 : .74;
-        // Before lock the aim follows the hero; advance now and re-evaluate after lock.
-        if(e.t>=lockAt){
-          const dx=e.lock.x-e.x,dy=e.lock.y-(e.y-8),len=Math.hypot(dx,dy)||1;
-          const a={x:e.x,y:e.y-8},vx=dx/len*175,vy=dy/len*175;
-          zones.push({kind:'shot',source:'arrow',a,b:{x:a.x+vx*3,y:a.y+vy*3},vx,vy,radius:14,eta:Math.max(0,fireAt-e.t),message:'侧移避开即将射出的箭，再接近弓箭手'});
-        }
-      }
+      // Archer aim/lock is not a hazard; avoid arrows only after they exist in projectiles.
       if(e.name==='minotaur'&&e.state==='windup')zones.push({kind:'ellipse',x:e.x,y:e.y,rx:65,ry:42,eta:Math.max(0,.9-e.t),message:'远离牛头人砸地范围'});
       else if(e.boss&&!['minotaur','ratking'].includes(e.name)&&e.state==='windup')zones.push({kind:'circle',x:e.x,y:e.y,radius:85,eta:.3,message:'未知 Boss 蓄力，先远离'});
       else if(e.state==='fuse')zones.push({kind:'circle',x:e.x,y:e.y-4,radius:48,eta:Math.max(0,.65-e.t),source:'bomber',message:'撤离已点燃的炸弹兵'});
@@ -41,7 +33,7 @@
     return zones;
   }
   function zoneMargin(p,z){
-    if(z.kind==='charge'||z.kind==='shot')return segmentDistance(p,z.a,z.b)-z.radius;
+    if(z.kind==='charge')return segmentDistance(p,z.a,z.b)-z.radius;
     if(z.kind==='ellipse')return (Math.hypot((p.x-z.x)/z.rx,(p.y-z.y)/z.ry)-1)*Math.min(z.rx,z.ry);
     return Math.hypot(p.x-z.x,p.y-z.y)-z.radius;
   }
@@ -106,12 +98,7 @@
     const entrants=enemies.filter(e=>e.state==='enter').map(e=>({...e,x:gatePoint.x,y:gatePoint.y,d:distance(h,gatePoint),positionOnly:true}));
     const rally=!enemies.length&&['clear','break'].includes(frame.phase)?{...gatePoint,name:'gate',id:null,positionOnly:true,rally:true,d:distance(h,gatePoint)}:null;
     const target=attackTarget||entrants[0]||rally;
-    const nearbyDanger=zones.filter(z=>{
-      if(zoneMargin(h,z)>=(z.source==='bomber'?24:z.alert??12))return false;
-      if(z.kind!=='shot')return true;
-      const along=((h.x-z.a.x)*z.vx+(h.y-6-z.a.y)*z.vy)/(175*175);
-      return z.eta+Math.max(0,along)<.85;
-    });
+    const nearbyDanger=zones.filter(z=>zoneMargin(h,z)<(z.source==='bomber'?24:z.alert??12));
     const incoming=projectiles.filter(p=>{
       const dx=h.x-p.x,dy=h.y-6-p.y,v2=p.vx*p.vx+p.vy*p.vy;if(!v2)return false;
       const t=(dx*p.vx+dy*p.vy)/v2;
@@ -142,7 +129,6 @@
       const path=t=>{const travel=64*Math.min(1,t/.24)+moveSpeed*Math.max(0,t-.24);return clamp({x:h.x+vx*travel,y:h.y+vy*travel})};
       for(const q of projectiles)if(projectileDistance(path,q,.65)<(q.kind==='fireball'?24:22))return false;
       for(const z of zones){
-        if(z.kind==='shot'){if(projectileDistance(path,{...z,...z.a},.9)<22)return false;continue}
         for(const d of [0,16,32,48,64])if(zoneMargin({x:h.x+vx*d,y:h.y+vy*d},z)<24)return false;
       }
       return true;
@@ -215,9 +201,6 @@
       const immuneUntil=dodge ? .24 : h.dodgeT>=0?Math.max(0,.24-h.dodgeT):0;
       for(const q of projectiles)risk(Math.max(0,(q.kind==='fireball'?16:14)-projectileDistance(position,q,.8,immuneUntil))*32*riskScale);
       for(const z of zones){
-        if(z.kind==='shot'){
-          risk(Math.max(0,z.radius-projectileDistance(position,{...z,...z.a},.9,immuneUntil))*32*riskScale);continue;
-        }
         const t=z.source==='bomber'?z.eta:Math.min(.65,Math.max(.15,z.eta)),p=position(t),margin=zoneMargin(p,z);
         if(z.source==='bomber'){
           // Do not assume an early dodge still protects when the fuse actually expires.
