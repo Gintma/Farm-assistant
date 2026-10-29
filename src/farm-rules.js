@@ -4,7 +4,15 @@
   const crops=Object.fromEntries(cropRows.map(([id,name,min,value])=>[id,{id,name,ms:min*60000,value,min}]));
   const animals={chicken:{building:'coop',bags:2,meal:.01,days:1,capacity:6},cow:{building:'barn',bags:8,meal:.04,days:1,capacity:3},sheep:{building:'sheepPen',bags:5,meal:.025,days:3,capacity:4},pig:{building:'pigPen',bags:10,meal:.05,days:7,capacity:2}};
   const trees={apple:{ms:86400000,value:.05},lemon:{ms:86400000,value:.055},orange:{ms:86400000,value:.055},blueberry:{ms:43200000,value:.025},raspberry:{ms:43200000,value:.025},blackberry:{ms:43200000,value:.025}};
-  const levels=[null,{mult:1,harvest:.7,passive:.25},{mult:1.6,harvest:1.64,passive:.58},{mult:1.75,harvest:3.74,passive:1.33},{mult:2.1,harvest:8.4,passive:3},{mult:2.4,harvest:18.66,passive:6.67}];
+  // Levels 6/7 add workers, while payout values and animal capacity stay at Lv5.
+  const levels=[null,
+    {mult:1,harvest:.7,passive:.25,battle:.55,farmers:1},
+    {mult:1.6,harvest:1.64,passive:.58,battle:1.28,farmers:2},
+    {mult:1.75,harvest:3.74,passive:1.33,battle:2.93,farmers:3},
+    {mult:2.1,harvest:8.4,passive:3,battle:6.6,farmers:4},
+    {mult:2.4,harvest:18.66,passive:6.67,battle:14.67,farmers:6},
+    {mult:2.4,harvest:18.66,passive:6.67,battle:14.67,farmers:7},
+    {mult:2.4,harvest:18.66,passive:6.67,battle:14.67,farmers:8}];
   const craftOpen=kind=>window.__FS_CRAFT__===true&&(window.__FS_CRAFT2__===true||Array.isArray(window.__FS_CRAFT2__)&&window.__FS_CRAFT2__.includes(kind));
   const isFruit=id=>['apple','lemon','orange'].includes(id);
   const built=(s,now)=>!s.buildUntil||s.buildUntil<=now;
@@ -40,7 +48,7 @@
     const rule=animals[a.kind];if(!rule)return null;
     const ss=f.structures.filter(s=>s.kind===rule.building).sort((a,b)=>(a.buildUntil||0)-(b.buildUntil||0));
     const index=f.animals.filter(x=>x.kind===a.kind).findIndex(x=>x.id===a.id);
-    const capacity=Math.floor(rule.capacity*[1,1.25,1.5,1.75,2][f.level-1]);
+    const capacity=Math.floor(rule.capacity*[1,1.25,1.5,1.75,2][Math.max(1,Math.min(5,f.level))-1]);
     return ss[Math.min(ss.length-1,Math.floor(index/capacity))]||null;
   }
   function feedPlan(d){

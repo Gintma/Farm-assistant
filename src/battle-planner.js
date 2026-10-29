@@ -62,6 +62,15 @@
     const projectiles=(frame.projectiles||[]).filter(p=>finite(p)&&Number.isFinite(p.vx)&&Number.isFinite(p.vy));
     const zones=threats(frame);
     const bounds=frame.bounds||{x0:42,y0:164,x1:694,y1:462};
+    const active=enemies.filter(e=>e.state!=='enter'&&!e.phased);
+    const local=active.filter(e=>distance(h,e)<140),ordinary=local.filter(e=>!e.boss);
+    const mixedBoss=local.some(e=>e.boss)&&ordinary.length>=2;
+    const mid=(bounds.x0+bounds.x1)/2;
+    const atGate=e=>Math.abs(e.x-mid)<130&&e.y<bounds.y0+130;
+    const gateActive=active.filter(atGate),gateEntering=enemies.filter(e=>e.state==='enter'&&atGate(e));
+    const gateCrowded=gateActive.length>=4||gateEntering.length>=2&&gateActive.length>=2||gateActive.some(e=>e.boss)&&gateActive.some(e=>!e.boss);
+    const gatePressure=gateCrowded&&Math.abs(h.x-mid)<150&&h.y<bounds.y0+150;
+    const pressured=ordinary.length>=4||mixedBoss||gatePressure;
     const damage=Number.isFinite(h.damage)&&h.damage>0?h.damage:3;
     const attackEvery=Number.isFinite(h.attackEvery)&&h.attackEvery>0?h.attackEvery:.42;
     const cleanup=frame.phase==='clear';
@@ -69,7 +78,11 @@
       const d=distance(h,e),knownHp=Number.isFinite(e.hp)&&e.hp>0,hits=knownHp?Math.ceil(e.hp/damage):3;
       const gap=Math.max(0,d-reach-(e.radius||12)+4),finish=knownHp&&hits<=2&&gap<55;
       const travel=gap/Math.max(1,speed),fight=Math.min(6,hits)*attackEvery;
-      const score=travel*45+fight*16-(finish?38:0)-(!cleanup&&['archer','caster'].includes(e.brain)?10:0);
+      // Favor a reachable threat; do not chase a shooter through a boss/body wall.
+      const blockers=active.filter(other=>other!==e&&segmentDistance(other,h,e)<(other.radius||12)+24);
+      const routeCost=blockers.reduce((n,other)=>n+(other.boss?55:16),0);
+      const ranged=['archer','caster'].includes(e.brain);
+      const score=travel*45+fight*16+routeCost-(finish?38:0)-(!cleanup&&ranged?(mixedBoss?24:10):0)+(mixedBoss&&e.boss?28:0);
       return {...e,d,hits,knownHp,finish,score};
     }).sort((a,b)=>a.score-b.score);
     const bestTarget=targets[0],preferred=preferredTarget==null?null:targets.find(e=>e.id===preferredTarget);
@@ -86,7 +99,7 @@
     });
     const rushing=enemies.some(e=>e.state!=='enter'&&['baby','babyb'].includes(e.name)&&distance(h,e)<(e.radius||5)+38);
     const crowded=enemies.filter(e=>e.state!=='enter'&&distance(h,e)<(e.radius||12)+38).length>=3;
-    const danger=nearbyDanger.length>0||incoming.length>0||rushing||crowded;
+    const danger=nearbyDanger.length>0||incoming.length>0||rushing||crowded||pressured;
     const babyOnly=rushing&&!incoming.length&&!crowded&&!nearbyDanger.some(z=>z.source!=='split');
     // Auto attacks can begin on the next game frame and slow walking immediately.
     const mayAttack=targets.some(e=>e.d<=reach*1.3+(e.radius||12)+6)&&(!Number.isFinite(h.attackCd)||h.attackCd<=.12);
@@ -94,7 +107,7 @@
     const clamp=p=>({x:Math.max(bounds.x0,Math.min(bounds.x1,p.x)),y:Math.max(bounds.y0,Math.min(bounds.y1,p.y))});
     if(!target&&!danger)return {keys:[],intent:enemies.some(e=>e.phased||e.state==='appear')?'track':'idle',message:enemies.some(e=>e.phased||e.state==='appear')?'已跟踪隐身怪，等待进入可攻击状态':'等待敌人',threats:zones.length};
     const hold=target&&!target.positionOnly&&!danger&&target.d<=reach+(target.radius||12)-4&&!stuck;
-    const travelReady=skills&&ready.dodge&&!h.busy&&!h.attacking&&!danger&&target&&(!target.positionOnly||target.rally)&&target.d>Math.max(110,reach+(target.radius||12)+80)&&!stuck;
+    const travelReady=hpRatio>.55&&!pressured&&!gateCrowded&&skills&&ready.dodge&&!h.busy&&!h.attacking&&!danger&&target&&(!target.positionOnly||target.rally)&&target.d>Math.max(110,reach+(target.radius||12)+80)&&!stuck;
     function travelSafe(vx,vy){
       if(!travelReady||(!vx&&!vy))return false;
       const end={x:h.x+vx*64,y:h.y+vy*64};
@@ -149,6 +162,13 @@
         if(entrants.length&&Math.abs(p.x-(bounds.x0+bounds.x1)/2)<58&&p.y<bounds.y0+70)risk((bounds.y0+70-p.y)*6);
         // Predict the game's actual wall clamp, without an extra forbidden edge strip.
         cost+=distance(p,rawPosition(t))*.04;
+        // Keep room to turn during mixed fights; the arena edges stay reachable.
+        if(pressured){
+          const edge=Math.min(p.x-bounds.x0,bounds.x1-p.x,p.y-bounds.y0,bounds.y1-p.y);
+          cost+=Math.max(0,28-edge)*1.2;
+        }
+        if(gateCrowded&&Math.abs(p.x-mid)<100&&p.y<bounds.y0+115)risk((bounds.y0+115-p.y)*2);
+        let bodies=0;
         for(const e of enemies){
           if(e.state==='enter'){
             // Reserve space for the transition to active combat at the landing point.
@@ -159,6 +179,8 @@
           const dx=h.x-e.x,dy=h.y-e.y,len=Math.hypot(dx,dy)||1;
           const enemySpeed=Number.isFinite(e.speed)?e.speed*(e.brain==='hopper'?1.8:1):0;
           const future=chase?{x:e.x+dx/len*Math.min(len,enemySpeed*t),y:e.y+dy/len*Math.min(len,enemySpeed*t)}:{x:e.x+(e.vx||0)*t,y:e.y+(e.vy||0)*t};
+          if(!e.boss&&!e.phased&&distance(p,future)<80)bodies++;
+          if(mixedBoss&&e.boss)risk(Math.max(0,(e.radius||18)+32-distance(p,future))*2*riskScale);
           const baby=['baby','babyb'].includes(e.name);
           const safe=(e.radius||12)+(baby?14:14+6*caution);
           // Compare simultaneous positions. Including the initial overlap makes every escape
@@ -167,6 +189,7 @@
           if(!(dodge&&t<.24))risk(Math.max(0,safe-margin)*(baby?30:18)*riskScale);
 
         }
+        if(pressured)risk(Math.max(0,bodies-2)*14*riskScale);
         for(const q of projectiles){
           const end={x:q.x+q.vx*t,y:q.y+q.vy*t};
           const margin=distance({x:p.x,y:p.y-6},end)-(q.kind==='fireball'?15:13);
@@ -191,26 +214,29 @@
       if(target){
         const p=position(.3),d=distance(p,target),desired=target.positionOnly?8:Math.max(8,reach+(target.radius||12)-6);
         // Approach live entrants within the legal map; ordinary attacks still wait for their active state.
-        cost+=(target.positionOnly?Math.max(0,d-desired):Math.abs(d-desired))*.85;if(d>desired)cost+=d*.1;
+        cost+=(target.positionOnly?Math.max(0,d-desired):Math.abs(d-desired))*(pressured ? .35 : .85);if(d>desired)cost+=d*.1;
       }
       if(!target)cost+=Math.hypot(vx,vy);
       candidates.push({vx,vy,dodge,cost,safety});
     }
     const walking=candidates.filter(c=>!c.dodge),safeWalking=walking.filter(c=>c.safety<1);
     // Walk before spending a dodge on baby contact alone, when a safe walking route exists.
-    const pool=babyOnly&&safeWalking.length?safeWalking:candidates;
+    const imminent=incoming.length>0||nearbyDanger.some(z=>z.source!=='split'&&z.eta<.35);
+    const pool=safeWalking.length&&(babyOnly||pressured&&!imminent)?safeWalking:candidates;
     best=pool.reduce((a,b)=>!a||b.cost<a.cost?b:a,null);
     const keys=[];
     if(Math.abs(best.vx)>.2)keys.push(best.vx>0?'ArrowRight':'ArrowLeft');
     if(Math.abs(best.vy)>.2)keys.push(best.vy>0?'ArrowDown':'ArrowUp');
     const inStorm=targets.filter(e=>e.d<(h.stormRadius||58)+(e.radius||12)-4);
-    const storm=skills&&ready.storm&&!h.busy&&inStorm.length>0&&(danger||inStorm.length>=2||inStorm.some(e=>e.boss||e.knownHp&&e.hits>=3));
+    // Starting storm slows walking. Never invalidate a full-speed escape we just chose.
+    const canSlow=!danger||!best.vx&&!best.vy||moveSpeed<=speed*.6;
+    const storm=canSlow&&skills&&ready.storm&&!h.busy&&inStorm.length>0&&(danger||inStorm.length>=2||inStorm.some(e=>e.boss||e.knownHp&&e.hits>=3));
     // Preserve the escape path that was evaluated with a dodge; storm changes movement speed.
     if(best.dodge)keys.push('Space');else if(storm)keys.push('KeyE');
-    const intent=best.dodge?(danger?'evade':'travel'):storm?'storm':stuck&&!danger?'recover':hold?(best.vx||best.vy?'skirmish':'attack'):target?.rally?'rally':target?.positionOnly?'intercept':cleanup?'cleanup':'approach';
+    const intent=best.dodge?(danger?'evade':'travel'):storm?'storm':stuck&&!danger?'recover':pressured&&(best.vx||best.vy)?'reposition':hold?(best.vx||best.vy?'skirmish':'attack'):target?.rally?'rally':target?.positionOnly?'intercept':cleanup?'cleanup':'approach';
     const boss=nearbyDanger.find(z=>/牛头人|鼠王/.test(z.message));
     const names={minotaur:'牛头人',ratking:'鼠王',slime:'史莱姆',slimeb:'蓝史莱姆',baby:'小史莱姆',babyb:'蓝色小史莱姆',archer:'弓箭手',wizard:'巫师',bomber:'自爆怪',goblin:'哥布林',ghost:'幽灵',bat:'蝙蝠',skeleton:'骷髅',rat:'老鼠'};
-    return {keys,intent,riskLevel,target:target?.name||'',targetId:target?.id??null,threats:zones.length,message:boss?.message||nearbyDanger[0]?.message||(intent==='travel'?'路线安全，闪避接近目标':intent==='recover'?'移动受阻，换方向脱困':intent==='attack'?'目标在攻击范围，稳住输出':intent==='skirmish'?'调整近身距离，保持输出':intent==='cleanup'?'波末清场，接近剩余敌人':intent==='intercept'?'门口安全范围接应，避开出生通道':intent==='rally'?(target.d<=8?'已在安全等待区，准备下一波':'本波已清场，前往随机安全位置'):incoming.length?'侧移避开箭矢或火球':rushing?'拉开距离，避让小史莱姆':target?'接近目标：'+(names[target.name]||target.name):'远离危险区域'),danger};
+    return {keys,intent,riskLevel,target:target?.name||'',targetId:target?.id??null,threats:zones.length,message:boss?.message||nearbyDanger[0]?.message||(intent==='evade'&&gatePressure?'闪避撤离拥挤门口':intent==='evade'&&mixedBoss?'闪避脱离Boss与怪群夹击':intent==='travel'?'路线安全，闪避接近目标':intent==='recover'?'移动受阻，换方向脱困':intent==='attack'?'目标在攻击范围，稳住输出':intent==='skirmish'?'调整近身距离，保持输出':intent==='reposition'?(gatePressure?'门口拥挤，向开阔区域调整':mixedBoss?'Boss与小怪混战，保持退路并处理近处威胁':'附近怪物密集，拉开距离并保留闪避'):intent==='cleanup'?'波末清场，接近剩余敌人':intent==='intercept'?'门口安全范围接应，避开出生通道':intent==='rally'?(target.d<=8?'已在安全等待区，准备下一波':'本波已清场，前往随机安全位置'):incoming.length?'侧移避开箭矢或火球':rushing?'拉开距离，避让小史莱姆':target?'接近目标：'+(names[target.name]||target.name):'远离危险区域'),danger};
   }
   const api={plan,threats,zoneMargin,rallyArea,safeRally,pickRally};if(typeof module!=='undefined')module.exports=api;else globalThis.FarmBattlePlanner=api;
 })();

@@ -39,9 +39,11 @@
   const orderDay=d=>{const utc=new Date(d.now).toISOString().slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(d.farm.orders?.day||'')&&d.farm.orders.day>utc?d.farm.orders.day:utc};
   const orderReset=d=>(Math.floor(d.now/86400000)+1)*86400000;
   const orderCap=d=>Math.floor(R.quote(d).pay(R.quote(d).l.harvest*.25));
+  // Four visible orders still use one third of the daily cap per delivery.
+  const orderRewardCap=d=>Math.floor(orderCap(d)/3);
   function budgetLeft(d,globalLeft){const spent=d.farm.orders?.day===orderDay(d)?d.farm.orders.dayTokens||0:0;return Math.max(0,Math.min(globalLeft,orderCap(d)-spent))}
   function orderValue(d,order){
-    const q=R.quote(d);return Math.round(Object.entries(order.items).reduce((n,[k,count])=>{if(!values[k]||!Number.isSafeInteger(count)||count<1)throw Error('订单计价规则无法确认');return n+Math.max(1,Math.round(q.pay(values[k])*q.l.mult))*count},0)*1.5);
+    const q=R.quote(d);return Math.min(orderRewardCap(d),Math.round(Object.entries(order.items).reduce((n,[k,count])=>{if(!values[k]||!Number.isSafeInteger(count)||count<1)throw Error('订单计价规则无法确认');return n+Math.max(1,Math.round(q.pay(values[k])*q.l.mult))*count},0)*1.5));
   }
   function syncBoard(board,d,globalLeft){
     let available=budgetLeft(d,globalLeft);const immediate=available;
@@ -214,5 +216,5 @@
     if(p.kind==='craft-start'||p.kind==='craft-take'){const s=f.structures.find(s=>s.id===p.id);return !!s&&JSON.stringify(s.queue||[])!==p.before}
     return false;
   }
-  window.__farmWorkshop={recipes,orderCount,stock,week,orderDay,orderReset,orderCap,budgetLeft,orderValue,syncBoard,reward,allowedOrders,readBudget,invalidateBudget,forecast,queued,feedWheat,demands,plan,pendingDone};
+  window.__farmWorkshop={recipes,orderCount,stock,week,orderDay,orderReset,orderCap,orderRewardCap,budgetLeft,orderValue,syncBoard,reward,allowedOrders,readBudget,invalidateBudget,forecast,queued,feedWheat,demands,plan,pendingDone};
 })();

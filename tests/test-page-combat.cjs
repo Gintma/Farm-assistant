@@ -48,3 +48,7 @@ b=boot();b.scene.enemies=[{alive:true,hittable:true,x:368,y:148,hp:10,rule:{id:'
 console.log('PASS: observer counts entrants and phased ghosts; between-wave rally pauses for upgrade overlays');
 b=boot();b.window.__farmCombat.set('enabled',true);b.tick();b.window.__farmCombat.set('mode','race');assert.equal(b.window.__farmCombat.status().mode,undefined,'obsolete mode cannot be restored');b.window.__farmManualCapture=true;b.tick();assert(!b.keys.RIGHT.isDown,'manual recording releases automatic movement');b.window.__farmBattleInput.apply(b.scene,{keys:['ArrowRight','Space']});assert(!b.keys.RIGHT.isDown);assert.equal(b.scene.run.dodges,0,'recording blocks skills even at adapter entry');b.window.__farmCombat.remove();
 console.log('PASS: obsolete race preference ignored, manual recording blocks movement, skills and observation');
+
+// The input adapter leaves new game-owned telemetry untouched.
+b=boot();const telemetry=Object.freeze({keys:5,taps:3,gp:0,tMean:200,tSd:35,tSame:0,ivMean:300,ivSd:60,ivSame:0,hMean:400,hSd:80,hid:1,wd:0,hl:0});b.scene.run.sig=telemetry;b.window.__farmBattleInput.apply(b.scene,{keys:['ArrowRight','Space']});assert.equal(b.scene.run.sig,telemetry);assert.equal(b.scene.doDodge,b.originalDodge);assert.equal(b.scene.doStorm,b.originalStorm);b.window.__farmCombat.remove();
+console.log('PASS: updated game telemetry stays game-owned and unmodified');

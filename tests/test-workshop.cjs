@@ -7,6 +7,14 @@ const make=()=>({owner:'test',access:{open:true},now:Date.parse('2026-10-23T03:0
 const fixture=[{index:0,items:{egg:3},reward:945,done:false},{index:1,items:{bread:6,flour:5},reward:1989,done:false},{index:2,items:{egg:6,bread:8},reward:3285,done:false}];
 const config={feedDays:2,workshopEat:true};
 let d=make(),board={owner:'test',day:'2026-10-23',orders:fixture};
+// The fourth order does not change the one-third per-delivery limit or rounding.
+for(const level of [2,3,4,5,6,7])for(const mult of [.05,.238,1]){
+ const capped=make();capped.farm.level=level;capped.price.mult=mult;const cap=Math.floor(Math.round(R.levels[level].harvest*.25/.0004*mult)/3);
+ assert.equal(W.orderRewardCap(capped),cap);
+ const orders=Array.from({length:4},(_,index)=>({index,items:{cheese:20},reward:999999}));
+ W.syncBoard({owner:'test',day:'2026-10-23',orders},capped,999999);assert(orders.every(o=>o.availableReward===cap));assert(orders.every(o=>o.reward<=cap));
+ assert.equal(orders.reduce((n,o)=>n+o.reward,0),W.orderCap(capped));
+}
 let p=W.demands(d,fixture,true);assert.equal(p.need.egg,14);assert.equal(p.wheat,10);assert.equal(p.breadBatches,5);
 d.farm.keep={egg:false};p=W.plan(d,config,board);assert.equal(p.jobs[0].kind,'craft-keep');assert.equal(p.jobs.find(j=>j.kind==='craft-start').count,8);
 d.farm.animals=[{id:'a',kind:'chicken',productReady:true}];d.farm.structures.push({id:'c',kind:'coop'});d.farm.silo.wheat=1;d.farm.silo.feed=0;

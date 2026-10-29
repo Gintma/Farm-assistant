@@ -27,6 +27,11 @@ b=fixture();let quotes=M.listings({listings:[b.quote('bread',10,100,'ok'),{...b.
 b=fixture();b.config.marketBuy=false;assert.equal(b.plan([b.quote('bread',1)]),null);b.config.marketBuy=true;b.board.owner='someone-else';assert.equal(b.plan([b.quote('bread',1)]).job,null);
 b=fixture();p=b.plan([b.quote('bread',10)]);assert.equal(M.pendingDone(p.job,b.d),false);b.d.farm.pantry.bread=1;assert.equal(M.pendingDone(p.job,b.d),false,'stock increase alone is not a confirmed buy');b.d.farm.tokens-=10;assert.equal(M.pendingDone(p.job,b.d),true);
 b=fixture();b.board.orders[0].done=true;b.config.workshopPrep=true;let prep={prep:{orders:[{items:{bread:4},forecast:true}]}};assert.equal(b.plan([b.quote('bread',1)],{},prep).job,null,'forecasts never authorize a purchase');
+// A stale uncapped board must never justify spending above a single-delivery cap.
+b=fixture();b.board.orders[0].items={cheese:2};b.board.orders[0].reward=99999;
+p=b.plan([b.quote('cheese',1000)]);assert.equal(p.job,null,'two cheeses cost more than the capped reward with margin');
+p=b.plan([b.quote('cheese',900)]);assert.equal(p.reward,2187);assert.equal(p.selected.cost,1800);
+b.d.farm.orders={day:'2026-10-23',dayTokens:W.orderCap(b.d)-10,done:[]};assert.equal(b.plan([b.quote('cheese',10)]).job,null,'remaining account allowance bounds even a stale board');
 // The production runner follows the chosen path, protecting direct orders.
 b=fixture();b.d.farm.pantry={flour:1,egg:1};p=b.plan([b.quote('bread',100)]);let jobs=M.productionJobs(b.d,p,[]);assert.equal(jobs[0].recipe,'bread');assert.equal(jobs[0].count,1);
 b=fixture();b.board.orders[0].items={flour:1,bread:4};b.d.farm.pantry={flour:1,egg:1};b.d.farm.silo.wheat=1;p=b.plan([]);jobs=M.productionJobs(b.d,p,[]);assert.deepEqual(Array.from(jobs,j=>j.recipe),['flour'],'direct flour is reserved until the missing batch arrives');

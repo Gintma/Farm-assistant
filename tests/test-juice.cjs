@@ -10,7 +10,7 @@ function fixture(){
  const quote=(item,price,qty=100)=>({id:item,item,price,qty,mine:false,exp:d.now+86400000});
  return {d,config,board,quote,plan:(q=[],state={})=>M.plan(d,config,board,q,state)};
 }
-let b=fixture();assert.equal(W.orderCount(),4);assert.equal(W.orderValue(b.d,b.board.orders[3]),2607);assert.equal(W.orderCap(b.d),6563,'four orders do not multiply the daily coin allowance');
+let b=fixture();assert.equal(W.orderCount(),4);assert.equal(W.orderValue(b.d,b.board.orders[3]),2187);assert.equal(W.orderCap(b.d),6563,'four orders do not multiply the daily coin allowance');
 const forecast=W.forecast('test-owner','2026-10-28');assert.equal(forecast.length,4);assert.deepEqual(JSON.parse(JSON.stringify(forecast[3].items)),{juice:2});assert.equal(forecast[3].stars,2);
 ctx.window.__FS_CRAFT2__=['loom'];assert.equal(W.orderCount(),3);assert.equal(W.forecast('test-owner','2026-10-28').length,3);ctx.window.__FS_CRAFT2__=['loom','press'];
 b=fixture();let demand=W.demands(b.d,b.board.orders,false);assert.equal(demand.need.juice,2);assert.equal(demand.need.fruit,4);assert.equal(demand.juiceBatches,2);

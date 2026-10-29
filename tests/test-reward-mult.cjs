@@ -24,12 +24,12 @@ for(const mult of [1,.5,.137,.05,.001,2,'0.25']){
  W.syncBoard(board,d,999999);assert.equal(board.orders[0].reward,12,'actual order-board reward must not be discounted twice');
 }
 // NFT ownership is optional. Only the server's active lock yields a bonus.
-for(const level of [1,2,3,4,5])for(const nft of [undefined,{on:false,lockDays:28},{on:true,lockDays:0}]){
+for(const level of [1,2,3,4,5,6,7])for(const nft of [undefined,{on:false,lockDays:28},{on:true,lockDays:0}]){
  const d=make(.5);d.farm.nft=nft;d.farm.level=level;delete d.farm.bank;
  const q=R.quote(d),m=E.model(d),pay=v=>Math.round(v/d.price.pay*.5);
  assert.equal(q.nftCapBonus,1);assert.equal(q.nftYieldBonus,1);
  assert.equal(m.harvest.cap,pay(R.levels[level].harvest)+123);assert.equal(q.value(.016),Math.floor(pay(.016)*R.levels[level].mult));
- assert.equal(m.battle.cap,pay([0,.55,1.28,2.93,6.6,14.67][level]));assert.equal(m.orders.cap,pay(R.levels[level].harvest*.25));
+ assert.equal(m.battle.cap,pay([0,.55,1.28,2.93,6.6,14.67,14.67,14.67][level]));assert.equal(m.orders.cap,pay(R.levels[level].harvest*.25));
 }
 let d=make(.5),q=R.quote(d);d.farm.today.harvestEarned=q.cap+100;assert.equal(R.quote(d).remaining,0,'past earnings above a newly reduced cap are retained');assert.equal(R.quote(d).carry,456);
 d=make(.5);const low=E.model(d).harvest.cap;d.price.mult=1;assert(E.model(d).harvest.cap>low,'each new snapshot updates estimates');

@@ -1,9 +1,9 @@
-/* Farming Season helper 1.22.1: original combat mechanics and unified controls. */
+/* Farming Season helper 1.23.0: original combat mechanics and unified controls. */
 (() => {
   if(location.hostname!=='farmingseason.io')throw Error('请只在 Farming Season 游戏页启动');
   const temp1=window.__farmGame||window.temp1;
   if(!temp1?.scene?.scenes)throw Error('未找到游戏实例，请使用扩展启动');
-  if(window.__farmLauncher?.status?.().version==='1.22.1')return '助手已开启，保留当前所有开关';
+  if(window.__farmLauncher?.status?.().version==='1.23.0')return '助手已开启，保留当前所有开关';
   const handoff={farm:window.__farmAutoFarm?.status?.(),automation:window.__farmAutomation?.status?.(),layout:window.__farmLayout?.status?.()};
   if(handoff.farm?.pending)throw Error('旧版农活尚未完成，请等队列完成后再次开启新版助手');
   window.__farmLauncher?.remove();
@@ -14,7 +14,7 @@
   function cleanup(){
     window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();window.__farmCompatibility?.remove();delete window.__farmUpdateCatalog;
   }
-  window.__farmLauncher={status:()=>({installed:true,version:'1.22.1',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
+  window.__farmLauncher={status:()=>({installed:true,version:'1.23.0',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{
 /* Pure planning over read-only snapshots. Inputs are regular direction/Space/E keys. */
 (() => {
@@ -80,6 +80,15 @@
     const projectiles=(frame.projectiles||[]).filter(p=>finite(p)&&Number.isFinite(p.vx)&&Number.isFinite(p.vy));
     const zones=threats(frame);
     const bounds=frame.bounds||{x0:42,y0:164,x1:694,y1:462};
+    const active=enemies.filter(e=>e.state!=='enter'&&!e.phased);
+    const local=active.filter(e=>distance(h,e)<140),ordinary=local.filter(e=>!e.boss);
+    const mixedBoss=local.some(e=>e.boss)&&ordinary.length>=2;
+    const mid=(bounds.x0+bounds.x1)/2;
+    const atGate=e=>Math.abs(e.x-mid)<130&&e.y<bounds.y0+130;
+    const gateActive=active.filter(atGate),gateEntering=enemies.filter(e=>e.state==='enter'&&atGate(e));
+    const gateCrowded=gateActive.length>=4||gateEntering.length>=2&&gateActive.length>=2||gateActive.some(e=>e.boss)&&gateActive.some(e=>!e.boss);
+    const gatePressure=gateCrowded&&Math.abs(h.x-mid)<150&&h.y<bounds.y0+150;
+    const pressured=ordinary.length>=4||mixedBoss||gatePressure;
     const damage=Number.isFinite(h.damage)&&h.damage>0?h.damage:3;
     const attackEvery=Number.isFinite(h.attackEvery)&&h.attackEvery>0?h.attackEvery:.42;
     const cleanup=frame.phase==='clear';
@@ -87,7 +96,11 @@
       const d=distance(h,e),knownHp=Number.isFinite(e.hp)&&e.hp>0,hits=knownHp?Math.ceil(e.hp/damage):3;
       const gap=Math.max(0,d-reach-(e.radius||12)+4),finish=knownHp&&hits<=2&&gap<55;
       const travel=gap/Math.max(1,speed),fight=Math.min(6,hits)*attackEvery;
-      const score=travel*45+fight*16-(finish?38:0)-(!cleanup&&['archer','caster'].includes(e.brain)?10:0);
+      // Favor a reachable threat; do not chase a shooter through a boss/body wall.
+      const blockers=active.filter(other=>other!==e&&segmentDistance(other,h,e)<(other.radius||12)+24);
+      const routeCost=blockers.reduce((n,other)=>n+(other.boss?55:16),0);
+      const ranged=['archer','caster'].includes(e.brain);
+      const score=travel*45+fight*16+routeCost-(finish?38:0)-(!cleanup&&ranged?(mixedBoss?24:10):0)+(mixedBoss&&e.boss?28:0);
       return {...e,d,hits,knownHp,finish,score};
     }).sort((a,b)=>a.score-b.score);
     const bestTarget=targets[0],preferred=preferredTarget==null?null:targets.find(e=>e.id===preferredTarget);
@@ -104,7 +117,7 @@
     });
     const rushing=enemies.some(e=>e.state!=='enter'&&['baby','babyb'].includes(e.name)&&distance(h,e)<(e.radius||5)+38);
     const crowded=enemies.filter(e=>e.state!=='enter'&&distance(h,e)<(e.radius||12)+38).length>=3;
-    const danger=nearbyDanger.length>0||incoming.length>0||rushing||crowded;
+    const danger=nearbyDanger.length>0||incoming.length>0||rushing||crowded||pressured;
     const babyOnly=rushing&&!incoming.length&&!crowded&&!nearbyDanger.some(z=>z.source!=='split');
     // Auto attacks can begin on the next game frame and slow walking immediately.
     const mayAttack=targets.some(e=>e.d<=reach*1.3+(e.radius||12)+6)&&(!Number.isFinite(h.attackCd)||h.attackCd<=.12);
@@ -112,7 +125,7 @@
     const clamp=p=>({x:Math.max(bounds.x0,Math.min(bounds.x1,p.x)),y:Math.max(bounds.y0,Math.min(bounds.y1,p.y))});
     if(!target&&!danger)return {keys:[],intent:enemies.some(e=>e.phased||e.state==='appear')?'track':'idle',message:enemies.some(e=>e.phased||e.state==='appear')?'已跟踪隐身怪，等待进入可攻击状态':'等待敌人',threats:zones.length};
     const hold=target&&!target.positionOnly&&!danger&&target.d<=reach+(target.radius||12)-4&&!stuck;
-    const travelReady=skills&&ready.dodge&&!h.busy&&!h.attacking&&!danger&&target&&(!target.positionOnly||target.rally)&&target.d>Math.max(110,reach+(target.radius||12)+80)&&!stuck;
+    const travelReady=hpRatio>.55&&!pressured&&!gateCrowded&&skills&&ready.dodge&&!h.busy&&!h.attacking&&!danger&&target&&(!target.positionOnly||target.rally)&&target.d>Math.max(110,reach+(target.radius||12)+80)&&!stuck;
     function travelSafe(vx,vy){
       if(!travelReady||(!vx&&!vy))return false;
       const end={x:h.x+vx*64,y:h.y+vy*64};
@@ -167,6 +180,13 @@
         if(entrants.length&&Math.abs(p.x-(bounds.x0+bounds.x1)/2)<58&&p.y<bounds.y0+70)risk((bounds.y0+70-p.y)*6);
         // Predict the game's actual wall clamp, without an extra forbidden edge strip.
         cost+=distance(p,rawPosition(t))*.04;
+        // Keep room to turn during mixed fights; the arena edges stay reachable.
+        if(pressured){
+          const edge=Math.min(p.x-bounds.x0,bounds.x1-p.x,p.y-bounds.y0,bounds.y1-p.y);
+          cost+=Math.max(0,28-edge)*1.2;
+        }
+        if(gateCrowded&&Math.abs(p.x-mid)<100&&p.y<bounds.y0+115)risk((bounds.y0+115-p.y)*2);
+        let bodies=0;
         for(const e of enemies){
           if(e.state==='enter'){
             // Reserve space for the transition to active combat at the landing point.
@@ -177,6 +197,8 @@
           const dx=h.x-e.x,dy=h.y-e.y,len=Math.hypot(dx,dy)||1;
           const enemySpeed=Number.isFinite(e.speed)?e.speed*(e.brain==='hopper'?1.8:1):0;
           const future=chase?{x:e.x+dx/len*Math.min(len,enemySpeed*t),y:e.y+dy/len*Math.min(len,enemySpeed*t)}:{x:e.x+(e.vx||0)*t,y:e.y+(e.vy||0)*t};
+          if(!e.boss&&!e.phased&&distance(p,future)<80)bodies++;
+          if(mixedBoss&&e.boss)risk(Math.max(0,(e.radius||18)+32-distance(p,future))*2*riskScale);
           const baby=['baby','babyb'].includes(e.name);
           const safe=(e.radius||12)+(baby?14:14+6*caution);
           // Compare simultaneous positions. Including the initial overlap makes every escape
@@ -185,6 +207,7 @@
           if(!(dodge&&t<.24))risk(Math.max(0,safe-margin)*(baby?30:18)*riskScale);
 
         }
+        if(pressured)risk(Math.max(0,bodies-2)*14*riskScale);
         for(const q of projectiles){
           const end={x:q.x+q.vx*t,y:q.y+q.vy*t};
           const margin=distance({x:p.x,y:p.y-6},end)-(q.kind==='fireball'?15:13);
@@ -209,26 +232,29 @@
       if(target){
         const p=position(.3),d=distance(p,target),desired=target.positionOnly?8:Math.max(8,reach+(target.radius||12)-6);
         // Approach live entrants within the legal map; ordinary attacks still wait for their active state.
-        cost+=(target.positionOnly?Math.max(0,d-desired):Math.abs(d-desired))*.85;if(d>desired)cost+=d*.1;
+        cost+=(target.positionOnly?Math.max(0,d-desired):Math.abs(d-desired))*(pressured ? .35 : .85);if(d>desired)cost+=d*.1;
       }
       if(!target)cost+=Math.hypot(vx,vy);
       candidates.push({vx,vy,dodge,cost,safety});
     }
     const walking=candidates.filter(c=>!c.dodge),safeWalking=walking.filter(c=>c.safety<1);
     // Walk before spending a dodge on baby contact alone, when a safe walking route exists.
-    const pool=babyOnly&&safeWalking.length?safeWalking:candidates;
+    const imminent=incoming.length>0||nearbyDanger.some(z=>z.source!=='split'&&z.eta<.35);
+    const pool=safeWalking.length&&(babyOnly||pressured&&!imminent)?safeWalking:candidates;
     best=pool.reduce((a,b)=>!a||b.cost<a.cost?b:a,null);
     const keys=[];
     if(Math.abs(best.vx)>.2)keys.push(best.vx>0?'ArrowRight':'ArrowLeft');
     if(Math.abs(best.vy)>.2)keys.push(best.vy>0?'ArrowDown':'ArrowUp');
     const inStorm=targets.filter(e=>e.d<(h.stormRadius||58)+(e.radius||12)-4);
-    const storm=skills&&ready.storm&&!h.busy&&inStorm.length>0&&(danger||inStorm.length>=2||inStorm.some(e=>e.boss||e.knownHp&&e.hits>=3));
+    // Starting storm slows walking. Never invalidate a full-speed escape we just chose.
+    const canSlow=!danger||!best.vx&&!best.vy||moveSpeed<=speed*.6;
+    const storm=canSlow&&skills&&ready.storm&&!h.busy&&inStorm.length>0&&(danger||inStorm.length>=2||inStorm.some(e=>e.boss||e.knownHp&&e.hits>=3));
     // Preserve the escape path that was evaluated with a dodge; storm changes movement speed.
     if(best.dodge)keys.push('Space');else if(storm)keys.push('KeyE');
-    const intent=best.dodge?(danger?'evade':'travel'):storm?'storm':stuck&&!danger?'recover':hold?(best.vx||best.vy?'skirmish':'attack'):target?.rally?'rally':target?.positionOnly?'intercept':cleanup?'cleanup':'approach';
+    const intent=best.dodge?(danger?'evade':'travel'):storm?'storm':stuck&&!danger?'recover':pressured&&(best.vx||best.vy)?'reposition':hold?(best.vx||best.vy?'skirmish':'attack'):target?.rally?'rally':target?.positionOnly?'intercept':cleanup?'cleanup':'approach';
     const boss=nearbyDanger.find(z=>/牛头人|鼠王/.test(z.message));
     const names={minotaur:'牛头人',ratking:'鼠王',slime:'史莱姆',slimeb:'蓝史莱姆',baby:'小史莱姆',babyb:'蓝色小史莱姆',archer:'弓箭手',wizard:'巫师',bomber:'自爆怪',goblin:'哥布林',ghost:'幽灵',bat:'蝙蝠',skeleton:'骷髅',rat:'老鼠'};
-    return {keys,intent,riskLevel,target:target?.name||'',targetId:target?.id??null,threats:zones.length,message:boss?.message||nearbyDanger[0]?.message||(intent==='travel'?'路线安全，闪避接近目标':intent==='recover'?'移动受阻，换方向脱困':intent==='attack'?'目标在攻击范围，稳住输出':intent==='skirmish'?'调整近身距离，保持输出':intent==='cleanup'?'波末清场，接近剩余敌人':intent==='intercept'?'门口安全范围接应，避开出生通道':intent==='rally'?(target.d<=8?'已在安全等待区，准备下一波':'本波已清场，前往随机安全位置'):incoming.length?'侧移避开箭矢或火球':rushing?'拉开距离，避让小史莱姆':target?'接近目标：'+(names[target.name]||target.name):'远离危险区域'),danger};
+    return {keys,intent,riskLevel,target:target?.name||'',targetId:target?.id??null,threats:zones.length,message:boss?.message||nearbyDanger[0]?.message||(intent==='evade'&&gatePressure?'闪避撤离拥挤门口':intent==='evade'&&mixedBoss?'闪避脱离Boss与怪群夹击':intent==='travel'?'路线安全，闪避接近目标':intent==='recover'?'移动受阻，换方向脱困':intent==='attack'?'目标在攻击范围，稳住输出':intent==='skirmish'?'调整近身距离，保持输出':intent==='reposition'?(gatePressure?'门口拥挤，向开阔区域调整':mixedBoss?'Boss与小怪混战，保持退路并处理近处威胁':'附近怪物密集，拉开距离并保留闪避'):intent==='cleanup'?'波末清场，接近剩余敌人':intent==='intercept'?'门口安全范围接应，避开出生通道':intent==='rally'?(target.d<=8?'已在安全等待区，准备下一波':'本波已清场，前往随机安全位置'):incoming.length?'侧移避开箭矢或火球':rushing?'拉开距离，避让小史莱姆':target?'接近目标：'+(names[target.name]||target.name):'远离危险区域'),danger};
   }
   const api={plan,threats,zoneMargin,rallyArea,safeRally,pickRally};if(typeof module!=='undefined')module.exports=api;else globalThis.FarmBattlePlanner=api;
 })();
@@ -631,7 +657,15 @@ window.__farmUpdateCatalog=Object.freeze({
   const crops=Object.fromEntries(cropRows.map(([id,name,min,value])=>[id,{id,name,ms:min*60000,value,min}]));
   const animals={chicken:{building:'coop',bags:2,meal:.01,days:1,capacity:6},cow:{building:'barn',bags:8,meal:.04,days:1,capacity:3},sheep:{building:'sheepPen',bags:5,meal:.025,days:3,capacity:4},pig:{building:'pigPen',bags:10,meal:.05,days:7,capacity:2}};
   const trees={apple:{ms:86400000,value:.05},lemon:{ms:86400000,value:.055},orange:{ms:86400000,value:.055},blueberry:{ms:43200000,value:.025},raspberry:{ms:43200000,value:.025},blackberry:{ms:43200000,value:.025}};
-  const levels=[null,{mult:1,harvest:.7,passive:.25},{mult:1.6,harvest:1.64,passive:.58},{mult:1.75,harvest:3.74,passive:1.33},{mult:2.1,harvest:8.4,passive:3},{mult:2.4,harvest:18.66,passive:6.67}];
+  // Levels 6/7 add workers, while payout values and animal capacity stay at Lv5.
+  const levels=[null,
+    {mult:1,harvest:.7,passive:.25,battle:.55,farmers:1},
+    {mult:1.6,harvest:1.64,passive:.58,battle:1.28,farmers:2},
+    {mult:1.75,harvest:3.74,passive:1.33,battle:2.93,farmers:3},
+    {mult:2.1,harvest:8.4,passive:3,battle:6.6,farmers:4},
+    {mult:2.4,harvest:18.66,passive:6.67,battle:14.67,farmers:6},
+    {mult:2.4,harvest:18.66,passive:6.67,battle:14.67,farmers:7},
+    {mult:2.4,harvest:18.66,passive:6.67,battle:14.67,farmers:8}];
   const craftOpen=kind=>window.__FS_CRAFT__===true&&(window.__FS_CRAFT2__===true||Array.isArray(window.__FS_CRAFT2__)&&window.__FS_CRAFT2__.includes(kind));
   const isFruit=id=>['apple','lemon','orange'].includes(id);
   const built=(s,now)=>!s.buildUntil||s.buildUntil<=now;
@@ -667,7 +701,7 @@ window.__farmUpdateCatalog=Object.freeze({
     const rule=animals[a.kind];if(!rule)return null;
     const ss=f.structures.filter(s=>s.kind===rule.building).sort((a,b)=>(a.buildUntil||0)-(b.buildUntil||0));
     const index=f.animals.filter(x=>x.kind===a.kind).findIndex(x=>x.id===a.id);
-    const capacity=Math.floor(rule.capacity*[1,1.25,1.5,1.75,2][f.level-1]);
+    const capacity=Math.floor(rule.capacity*[1,1.25,1.5,1.75,2][Math.max(1,Math.min(5,f.level))-1]);
     return ss[Math.min(ss.length-1,Math.floor(index/capacity))]||null;
   }
   function feedPlan(d){
@@ -821,9 +855,11 @@ window.__farmUpdateCatalog=Object.freeze({
   const orderDay=d=>{const utc=new Date(d.now).toISOString().slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(d.farm.orders?.day||'')&&d.farm.orders.day>utc?d.farm.orders.day:utc};
   const orderReset=d=>(Math.floor(d.now/86400000)+1)*86400000;
   const orderCap=d=>Math.floor(R.quote(d).pay(R.quote(d).l.harvest*.25));
+  // Four visible orders still use one third of the daily cap per delivery.
+  const orderRewardCap=d=>Math.floor(orderCap(d)/3);
   function budgetLeft(d,globalLeft){const spent=d.farm.orders?.day===orderDay(d)?d.farm.orders.dayTokens||0:0;return Math.max(0,Math.min(globalLeft,orderCap(d)-spent))}
   function orderValue(d,order){
-    const q=R.quote(d);return Math.round(Object.entries(order.items).reduce((n,[k,count])=>{if(!values[k]||!Number.isSafeInteger(count)||count<1)throw Error('订单计价规则无法确认');return n+Math.max(1,Math.round(q.pay(values[k])*q.l.mult))*count},0)*1.5);
+    const q=R.quote(d);return Math.min(orderRewardCap(d),Math.round(Object.entries(order.items).reduce((n,[k,count])=>{if(!values[k]||!Number.isSafeInteger(count)||count<1)throw Error('订单计价规则无法确认');return n+Math.max(1,Math.round(q.pay(values[k])*q.l.mult))*count},0)*1.5));
   }
   function syncBoard(board,d,globalLeft){
     let available=budgetLeft(d,globalLeft);const immediate=available;
@@ -996,7 +1032,7 @@ window.__farmUpdateCatalog=Object.freeze({
     if(p.kind==='craft-start'||p.kind==='craft-take'){const s=f.structures.find(s=>s.id===p.id);return !!s&&JSON.stringify(s.queue||[])!==p.before}
     return false;
   }
-  window.__farmWorkshop={recipes,orderCount,stock,week,orderDay,orderReset,orderCap,budgetLeft,orderValue,syncBoard,reward,allowedOrders,readBudget,invalidateBudget,forecast,queued,feedWheat,demands,plan,pendingDone};
+  window.__farmWorkshop={recipes,orderCount,stock,week,orderDay,orderReset,orderCap,orderRewardCap,budgetLeft,orderValue,syncBoard,reward,allowedOrders,readBudget,invalidateBudget,forecast,queued,feedWheat,demands,plan,pendingDone};
 })();
 
 /* Authorize purchases against one actual order, including its sunk costs. */
@@ -1102,7 +1138,8 @@ window.__farmUpdateCatalog=Object.freeze({
     const evaluations=[];let best=null;
     for(const order of board.orders){
       if(order.done||order.forecast||active&&order.index!==active.index)continue;
-      const reward=W.reward(order);
+      const reported=W.reward(order);
+      const reward=Number.isFinite(reported)?Math.min(reported,W.orderRewardCap(d),W.budgetLeft(d,Infinity)):NaN;
       if(!Number.isFinite(reward)||!(reward>0)){evaluations.push({index:order.index,reason:'仅星星，不采购'});continue}
       const orderKey=key(day,order.index),past=state.orderCosts?.[orderKey]||{cash:0,energy:0,energyCost:0};
       if(past.signature&&past.signature!==signature(order)){evaluations.push({index:order.index,reason:'订单内容变化，成本无法核对'});continue}
@@ -1243,7 +1280,7 @@ window.__farmUpdateCatalog=Object.freeze({
       if(Array.isArray(group.workers)){
         // Read the same active worker count and per-worker predicates used by
         // the game. Construction can suspend a worker with ordinary jobs queued.
-        const count=Number(d.farm.farmers??1),max=[1,2,3,4,6][d.farm.level-1];
+        const count=Number(d.farm.farmers??1),max=R.levels[d.farm.level]?.farmers;
         if(!Number.isInteger(count)||count<1||!max)return null;
         const total=window.__FS_FARMERS__===false?1:Math.min(count,max);
         if(group.workers.length<total)return null;
@@ -1740,7 +1777,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 (() => {
   if(window.__farmEarnings)return;
   const R=window.__farmRules,W=window.__farmWorkshop;
-  const dayMs=86400000,battleLimits=[0,.55,1.28,2.93,6.6,14.67];
+  const dayMs=86400000;
   const number=n=>Number.isFinite(n)?n.toLocaleString('zh-CN',{maximumFractionDigits:0}):'等待数据';
   const duration=ms=>{if(!Number.isFinite(ms))return '等待数据';const m=Math.max(1,Math.ceil(ms/60000));return m>=60?Math.floor(m/60)+'小时'+(m%60?m%60+'分':''):m+'分钟'};
   const meter=(earned,cap)=>({earned,cap,left:Math.max(0,cap-earned),pct:cap>0?Math.min(100,Math.max(0,earned/cap*100)):0});
@@ -1749,7 +1786,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     const today=R.calendar(f,d.now);
     const villageDaily=q.pay(q.l.passive)*q.bonus,villageCap=villageDaily*2;
     const villageStored=Number.isFinite(f.passiveSince)?Math.min(villageCap,Math.max(0,(f.passiveBank||0)+villageDaily*Math.max(0,now-f.passiveSince)/dayMs)):null;
-    const battleCap=q.pay(battleLimits[f.level]),battleEarned=f.today.battleEarned;
+    const battleCap=q.pay(q.l.battle),battleEarned=f.today.battleEarned;
     const active=live&&Number.isFinite(live.earned)&&live.cap>0;
     const harvest=sameDay?meter(f.today.harvestEarned,q.cap):null;
     const battle=sameDay&&(active||Number.isFinite(battleEarned))?meter(active?live.earned:battleEarned,active?live.cap:battleCap):null;
@@ -1817,8 +1854,8 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     reason.textContent=stars?(allowance===0?'账号今日订单金币额度已用完。':'全服订单金币预算已耗尽。'):budgetError;
     resetLine.textContent=valid?'收获 / 战斗：'+duration(view.reset-now)+'后重置\n作坊订单：'+duration(view.orderReset-now)+'后重置':'刷新后显示重置时间';
     row(detailBody,'订单金币',view?.orders?number(view.orders.earned)+' / '+number(view.orders.cap):'等待数据');
-    if(view?.orders){row(detailBody,'账号剩余额度',number(view.orders.left));row(detailBody,'当前可获上限',knownBudget?number(Math.min(view.orders.left,globalLeft)):'等待预算确认')}
-    const note=el('p','订单当前可获上限同时受账号额度和全服预算限制；实际奖励以交付时为准。');note.className='fh-earnings-note';detailBody.append(note);
+    if(view?.orders){row(detailBody,'账号剩余额度',number(view.orders.left));row(detailBody,'当前可获上限',knownBudget?number(Math.min(view.orders.left,globalLeft,Math.max(0,total-count)*W.orderRewardCap(data))):'等待预算确认')}
+    const note=el('p','订单当前可获上限同时受剩余订单、单张上限、账号额度和全服预算限制；实际奖励以交付时为准。');note.className='fh-earnings-note';detailBody.append(note);
   }
   function syncCached(){
     const cached=window.__farmAutomation?.readSnapshot?.();
@@ -2440,5 +2477,5 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 1.22.1 已开启；请查看面板中的游戏代码检查状态';
+  return '助手 1.23.0 已开启；请查看面板中的游戏代码检查状态';
 })();

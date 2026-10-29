@@ -35,5 +35,11 @@ async function setup(){
  b=await setup();b.free.isBusy=undefined;await b.step();assert.equal(b.clicks.length,0,'changed worker shape stops conservatively');b.api.remove();
  b=await setup();b.builder.shouldBuild=()=>{throw Error('changed')};await b.step();assert.equal(b.clicks.length,0,'unreadable construction status cannot dispatch');b.api.remove();
  b=await setup();b.d.farm.structures.push({id:'future',kind:'coop',buildStart:b.d.now+86400000,buildUntil:b.d.now+172800000});await b.step();assert.equal(b.clicks.at(-1),'plant-all:radish','future construction does not occupy the idle worker now');b.api.remove();
+ for(const [level,total]of [[6,7],[7,8]]){
+  b=await setup();b.d.farm.level=level;b.d.farm.farmers=total;
+  b.group.workers=[...Array.from({length:total-1},()=>({...b.builder,jobs:[]})),b.free];
+  await b.step();assert.equal(b.clicks.at(-1),'plant-all:radish');assert.equal(b.api.status().workers.total,total);assert.equal(b.api.status().workers.building,total-1);b.api.remove();
+  b=await setup();b.d.farm.level=level;b.d.farm.farmers=total;b.group.workers=[b.builder,b.free];await b.step();assert.equal(b.clicks.length,0,'higher-level pool still waits for all actual hired workers to load');b.api.remove();
+ }
  console.log('PASS: idle second farmer plants/harvests during construction; suspended queues, dedup, confirmation, busy/unknown/single/loading guards and future builds');
 })().catch(e=>{console.error(e);process.exitCode=1});

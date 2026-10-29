@@ -2,7 +2,7 @@
 (() => {
   if(window.__farmEarnings)return;
   const R=window.__farmRules,W=window.__farmWorkshop;
-  const dayMs=86400000,battleLimits=[0,.55,1.28,2.93,6.6,14.67];
+  const dayMs=86400000;
   const number=n=>Number.isFinite(n)?n.toLocaleString('zh-CN',{maximumFractionDigits:0}):'等待数据';
   const duration=ms=>{if(!Number.isFinite(ms))return '等待数据';const m=Math.max(1,Math.ceil(ms/60000));return m>=60?Math.floor(m/60)+'小时'+(m%60?m%60+'分':''):m+'分钟'};
   const meter=(earned,cap)=>({earned,cap,left:Math.max(0,cap-earned),pct:cap>0?Math.min(100,Math.max(0,earned/cap*100)):0});
@@ -11,7 +11,7 @@
     const today=R.calendar(f,d.now);
     const villageDaily=q.pay(q.l.passive)*q.bonus,villageCap=villageDaily*2;
     const villageStored=Number.isFinite(f.passiveSince)?Math.min(villageCap,Math.max(0,(f.passiveBank||0)+villageDaily*Math.max(0,now-f.passiveSince)/dayMs)):null;
-    const battleCap=q.pay(battleLimits[f.level]),battleEarned=f.today.battleEarned;
+    const battleCap=q.pay(q.l.battle),battleEarned=f.today.battleEarned;
     const active=live&&Number.isFinite(live.earned)&&live.cap>0;
     const harvest=sameDay?meter(f.today.harvestEarned,q.cap):null;
     const battle=sameDay&&(active||Number.isFinite(battleEarned))?meter(active?live.earned:battleEarned,active?live.cap:battleCap):null;
@@ -79,8 +79,8 @@
     reason.textContent=stars?(allowance===0?'账号今日订单金币额度已用完。':'全服订单金币预算已耗尽。'):budgetError;
     resetLine.textContent=valid?'收获 / 战斗：'+duration(view.reset-now)+'后重置\n作坊订单：'+duration(view.orderReset-now)+'后重置':'刷新后显示重置时间';
     row(detailBody,'订单金币',view?.orders?number(view.orders.earned)+' / '+number(view.orders.cap):'等待数据');
-    if(view?.orders){row(detailBody,'账号剩余额度',number(view.orders.left));row(detailBody,'当前可获上限',knownBudget?number(Math.min(view.orders.left,globalLeft)):'等待预算确认')}
-    const note=el('p','订单当前可获上限同时受账号额度和全服预算限制；实际奖励以交付时为准。');note.className='fh-earnings-note';detailBody.append(note);
+    if(view?.orders){row(detailBody,'账号剩余额度',number(view.orders.left));row(detailBody,'当前可获上限',knownBudget?number(Math.min(view.orders.left,globalLeft,Math.max(0,total-count)*W.orderRewardCap(data))):'等待预算确认')}
+    const note=el('p','订单当前可获上限同时受剩余订单、单张上限、账号额度和全服预算限制；实际奖励以交付时为准。');note.className='fh-earnings-note';detailBody.append(note);
   }
   function syncCached(){
     const cached=window.__farmAutomation?.readSnapshot?.();

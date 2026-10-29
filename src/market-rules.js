@@ -101,7 +101,8 @@
     const evaluations=[];let best=null;
     for(const order of board.orders){
       if(order.done||order.forecast||active&&order.index!==active.index)continue;
-      const reward=W.reward(order);
+      const reported=W.reward(order);
+      const reward=Number.isFinite(reported)?Math.min(reported,W.orderRewardCap(d),W.budgetLeft(d,Infinity)):NaN;
       if(!Number.isFinite(reward)||!(reward>0)){evaluations.push({index:order.index,reason:'仅星星，不采购'});continue}
       const orderKey=key(day,order.index),past=state.orderCosts?.[orderKey]||{cash:0,energy:0,energyCost:0};
       if(past.signature&&past.signature!==signature(order)){evaluations.push({index:order.index,reason:'订单内容变化，成本无法核对'});continue}

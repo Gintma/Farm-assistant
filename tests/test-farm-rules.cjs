@@ -26,7 +26,7 @@ console.log('PASS: farm-local meals/day rollover; per-building energy; silo auto
 
 // Never substitute forecasts or workshop reserves for paid harvest progress.
 ctx.window.__farmWorkshop={feedWheat:()=>12};
-for(const level of [1,2,3,4,5])for(const mult of [.05,.5,1])for(const smart of [false,true])for(const nft of [false,true]){
+for(const level of [1,2,3,4,5,6,7])for(const mult of [.05,.5,1])for(const smart of [false,true])for(const nft of [false,true]){
  d=make();d.farm.level=level;d.price.mult=mult;d.farm.nft={on:nft,lockDays:28};d.farm.harvestCarry=R.quote(d).base*7;d.farm.fields=[{id:'f',crop:'turnip',plantedAt:d.now-1800001}];d.farm.today.harvestEarned=R.quote(d).cap-1;
  const conf={crop:'turnip',smart,feedDays:1,workshopWheat:100};let choice=R.chooseCrop(d,conf,{workshop:true});assert.equal(choice.crop,'turnip');assert.match(choice.message,/今日收获未满/);
  for(const crop of ['wheat','corn'])assert.equal(R.chooseCrop(d,{...conf,crop},{workshop:true}).crop,crop);
@@ -34,3 +34,15 @@ for(const level of [1,2,3,4,5])for(const mult of [.05,.5,1])for(const smart of [
  assert.equal(R.chooseCrop(d,{...conf,marketBuy:true,smart:true},{workshop:true}).crop,null,'market order sourcing does not force wheat planting');
 }
 d=make();d.price.mult=.05;d.farm.today.harvestEarned=R.quote(d).cap;assert.equal(R.chooseCrop(d,config,{}).crop,null);d.price.mult=1;assert.equal(R.chooseCrop(d,config,{}).crop,'turnip','restored payout cap resumes cash crops');
+
+// Lv6/7 use Lv5 values/capacity without inventing an extra payout multiplier.
+for(const level of [5,6,7]){
+ d=make();d.price.mult=.238;d.farm.level=level;d.farm.structures=[{id:'barn-a',kind:'barn'},{id:'barn-b',kind:'barn'}];
+ d.farm.animals=Array.from({length:12},(_,i)=>({id:'cow'+i,kind:'cow',productReady:true,fedWindows:[],meals:1}));
+ const q=R.quote(d);assert.equal(q.l.battle,14.67);assert.equal(q.energy10,348);
+ assert.equal(q.cap,Math.round(18.66/.00032*.238));assert.equal(R.building(d.farm,d.farm.animals[5]).id,'barn-a');assert.equal(R.building(d.farm,d.farm.animals[6]).id,'barn-b');
+ assert.equal(R.feedPlan(d).energy,4);assert.equal(R.collectPlan(d).energy,4);assert.equal(R.collectPlan(d).value,12*q.animalValue(.16));
+ assert.equal(q.l.farmers,({5:6,6:7,7:8})[level]);
+}
+d=make();d.farm.level=8;assert.throws(()=>R.quote(d),/等级/);
+console.log('PASS: Lv6/7 payouts and energy match Lv5, cow capacity remains six per barn, multiple barns feed/collect and unknown levels stop');

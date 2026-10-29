@@ -87,7 +87,7 @@
       if(Array.isArray(group.workers)){
         // Read the same active worker count and per-worker predicates used by
         // the game. Construction can suspend a worker with ordinary jobs queued.
-        const count=Number(d.farm.farmers??1),max=[1,2,3,4,6][d.farm.level-1];
+        const count=Number(d.farm.farmers??1),max=R.levels[d.farm.level]?.farmers;
         if(!Number.isInteger(count)||count<1||!max)return null;
         const total=window.__FS_FARMERS__===false?1:Math.min(count,max);
         if(group.workers.length<total)return null;
