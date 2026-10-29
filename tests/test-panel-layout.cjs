@@ -9,7 +9,7 @@ function boot(){
   setAttribute(k,v){this.attrs[k]=v}getAttribute(k){return this.attrs[k]??null}removeAttribute(k){delete this.attrs[k]}
   querySelector(){return this.isCombatRow?{}:null}getClientRects(){return this.hidden?[]:[{}]}getBoundingClientRect(){return {width:268,height:400}}focus(){}
  }
- const el=t=>new Element(t),panel=el('aside'),title=el('div'),combat=el('div'),goal=el('form'),farm=el('div'),footer=el('p');combat.isCombatRow=true;panel.id='farm-compact-controls';farm.id='farm-auto-controls';title.textContent='农场助手';panel.append(title,combat,goal,farm,footer);
+ const el=t=>new Element(t),panel=el('aside'),title=el('div'),combat=el('div'),goal=el('form'),farm=el('div'),detail=el('div'),footer=el('p');combat.isCombatRow=true;panel.id='farm-compact-controls';farm.id='farm-auto-controls';title.textContent='农场助手';panel.append(title,combat,goal,farm,detail,footer);
  const battleRoot=el('div');battleRoot.hidden=true;
  const nodes=n=>[n,...n.children.filter(x=>x&&typeof x==='object').flatMap(nodes)];const document={head:el('head'),createElement:el,createTextNode:t=>t,getElementById:id=>id==='battle-ui'?battleRoot:nodes(panel).find(n=>n.id===id)||null};
  const window={innerWidth:1200,innerHeight:800,__farmLauncher:{status:()=>({version:'1.21.0'})},__farmCompact:{remove(){}},__farmAutomation:{sections:{animal:el('section'),workshop:el('section'),daily:el('section')},state:el('p'),recheck:el('button'),execution:()=>view},__farmEarnings:{mount:p=>p.append(el('section')),setVisible:v=>visible.push(v)},addEventListener(){},removeEventListener(){}};
@@ -34,3 +34,13 @@ count=null;c.render();assert.equal(readout.textContent,'按键 keys · — 次',
 assert(!c.nodes(c.panel).some(n=>n.textContent.includes('保留正常受伤与死亡')),'long battle instructions removed');
 c.battleRoot.hidden=true;c.render();assert.equal(c.nodes(c.panel).find(n=>n.id==='farm-helper-battle-page').hidden,true,'readout leaves view with battle page');
 c.api.remove();console.log('PASS: compact live keys readout updates outside disclosures and follows battle page visibility');
+
+const d=boot(),findD=cls=>d.nodes(d.panel).find(n=>n.classList.contains(cls));
+d.battleRoot.hidden=false;d.window.__farmCombat={status:()=>({enabled:false,keyCount:2})};d.render();
+assert.equal(findD('fh-battle-controls').hidden,false);assert.equal(findD('fh-stats').hidden,false);
+d.window.__farmBattleReport={status:()=>({available:true})};d.battleRoot.hidden=true;d.render();
+assert.equal(d.nodes(d.panel).find(n=>n.id==='farm-helper-tab-battle').hidden,false,'latest report keeps the battle tab accessible after returning to village');
+d.api.show('battle');d.render();assert.equal(d.api.status().tab,'battle');assert.equal(d.nodes(d.panel).find(n=>n.id==='farm-helper-battle-page').hidden,false);
+assert.equal(findD('fh-battle-controls').hidden,true);assert.equal(findD('fh-stats').hidden,true,'village report access does not show battle controls or stale combat stats');
+d.window.__farmBattleReport.status=()=>({available:false});d.api.show('field');d.render();assert.equal(d.nodes(d.panel).find(n=>n.id==='farm-helper-tab-battle').hidden,true);
+d.api.remove();console.log('PASS: latest settlement remains exportable in village with combat controls hidden');

@@ -1,9 +1,9 @@
-/* Farming Season helper 1.24.3: original combat mechanics and unified controls. */
+/* Farming Season helper 1.25.0: original combat mechanics and unified controls. */
 (() => {
   if(location.hostname!=='farmingseason.io')throw Error('请只在 Farming Season 游戏页启动');
   const temp1=window.__farmGame||window.temp1;
   if(!temp1?.scene?.scenes)throw Error('未找到游戏实例，请使用扩展启动');
-  if(window.__farmLauncher?.status?.().version==='1.24.3')return '助手已开启，保留当前所有开关';
+  if(window.__farmLauncher?.status?.().version==='1.25.0')return '助手已开启，保留当前所有开关';
   const handoff={farm:window.__farmAutoFarm?.status?.(),automation:window.__farmAutomation?.status?.(),layout:window.__farmLayout?.status?.()};
   if(handoff.farm?.pending)throw Error('旧版农活尚未完成，请等队列完成后再次开启新版助手');
   window.__farmLauncher?.remove();
@@ -12,9 +12,9 @@
   window.__farmDodge?.restore();window.__farmSeek?.restore();window.__farmInvincible?.restore();
   window.__farmHandoff=handoff;
   function cleanup(){
-    window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();window.__farmCompatibility?.remove();delete window.__farmUpdateCatalog;
+    window.__farmBattleReport?.remove();window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();window.__farmCompatibility?.remove();delete window.__farmUpdateCatalog;
   }
-  window.__farmLauncher={status:()=>({installed:true,version:'1.24.3',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
+  window.__farmLauncher={status:()=>({installed:true,version:'1.25.0',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{
 /* Pure planning over read-only snapshots. Inputs are regular direction/Space/E keys. */
 (() => {
@@ -2296,6 +2296,100 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
   }};
 })();
 
+/* Latest settlement only. Observe fetch without rewriting or replaying it. */
+(() => {
+  window.__farmBattleReport?.remove();
+  const KEY='farm-helper.battle-report.latest.v1',LIMIT=262144,PATH='/api/farm/battle/end';
+  const original=window.fetch||fetch;
+  let latest=null,sequence=0,removed=false,ui=null,storageOK=true;
+  const privateKey=/(cookie|authorization|signature|password|secret|wallet|owner|address|token|nonce|permit|proof|captcha|turnstile)/i;
+  const cleanText=s=>String(s).slice(0,1000).replace(/0x[a-f0-9]{20,}/gi,'[地址已脱敏]').replace(/eyJ[\w.-]{30,}/g,'[令牌已脱敏]');
+  function clean(value,depth=0){
+    if(depth>8)return '[深度上限]';
+    if(value===null||typeof value==='boolean'||typeof value==='number')return value;
+    if(typeof value==='string')return cleanText(value);
+    if(Array.isArray(value))return value.slice(0,2000).map(x=>clean(x,depth+1));
+    if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).slice(0,200).filter(([key])=>!privateKey.test(key)).map(([key,x])=>[key,/^(run|runId)$/i.test(key)?'[局标识已脱敏]':clean(x,depth+1)]));
+    return null;
+  }
+  const unavailable=message=>({unavailable:message});
+  function parse(raw){
+    if(typeof raw!=='string')return unavailable('请求体不是可读取的 JSON 文本');
+    if(raw.length>LIMIT)return unavailable('正文超过256KB，未保留');
+    try{return clean(JSON.parse(raw))}catch{return unavailable('正文不是可解析的 JSON，未保留原文')}
+  }
+  async function read(copy){
+    if(Number(copy.headers?.get?.('content-length'))>LIMIT)return unavailable('正文超过256KB，未读取');
+    if(!copy.body?.getReader)return parse(await copy.text());
+    const reader=copy.body.getReader(),decoder=new TextDecoder();let size=0,text='';
+    try{
+      while(true){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>LIMIT){void reader.cancel().catch(()=>{});return unavailable('正文超过256KB，未保留')}text+=decoder.decode(part.value,{stream:true})}
+      return parse(text+decoder.decode());
+    }finally{reader.releaseLock()}
+  }
+  function persist(){
+    try{sessionStorage.setItem(KEY,JSON.stringify(latest));storageOK=true}catch{storageOK=false}
+    paint();
+  }
+  try{
+    const raw=sessionStorage.getItem(KEY);
+    if(raw&&raw.length<=LIMIT*3){const saved=JSON.parse(raw);if(saved?.schema===1&&saved.kind==='battle-settlement'&&saved.path===PATH&&Number.isFinite(saved.at))latest=clean(saved)}
+  }catch{storageOK=false}
+  function current(id){return !removed&&id===sequence}
+  function observe(input,init){
+    let body=null,metadata=null;
+    try{
+      const url=new URL(typeof input==='string'||input instanceof URL?input:input.url,location.href);
+      const method=String(init?.method||input?.method||'GET').toUpperCase();
+      if(url.origin===location.origin&&url.pathname===PATH&&method==='POST'){
+        metadata={schema:1,kind:'battle-settlement',helperVersion:window.__farmLauncher?.status?.().version||'unknown',at:Date.now(),path:PATH,method,
+          notes:['仅保留最新一次结算上报；新的上报覆盖旧记录。','请求来自本页fetch调用的正文副本；未修改、重放或额外发送游戏操作。网络失败与服务器拒绝也会保留，不能仅凭发起请求认定结算成功。','不保存请求头、Cookie或身份凭据；局标识已脱敏。响应仅保留结算结果字段，不保留农场账号快照。','正文最多256KB；过长文本、数组或深层字段会截断，不支持的格式会标注不可读取。'],request:null,response:null,responsePending:true,state:'pending'};
+        if(typeof init?.body==='string')body=Promise.resolve(init.body).then(parse);
+        else if(init?.body!=null)body=Promise.resolve(unavailable('请求体格式不受支持，未读取'));
+        else if(typeof input?.clone==='function'){const copy=input.clone();body=Promise.resolve().then(()=>read(copy)).catch(()=>unavailable('请求正文不可读取'))}
+        else body=Promise.resolve(unavailable('请求正文不可读取'));
+      }
+    }catch{if(metadata)body=Promise.resolve(unavailable('请求正文不可读取'))} // Observation must never prevent the game's fetch.
+    let pending;
+    try{pending=Reflect.apply(original,this,arguments)}catch(error){if(metadata&&!removed){latest={...metadata,state:'failed',responsePending:false,error:cleanText(error.message)};const id=++sequence;persist();void body?.then(data=>{if(current(id)){latest.request=data;persist()}})}throw error}
+    if(!metadata||removed)return pending;
+    const id=++sequence;latest=metadata;persist();
+    void body.then(data=>{if(current(id)){latest.request=data;persist()}}).catch(()=>{});
+    void Promise.resolve(pending).then(res=>{
+      if(!current(id))return;
+      latest.status=res.status;latest.state='responded';latest.responseAt=Date.now();persist();
+      if(typeof res.clone!=='function'){latest.response=unavailable('响应正文不可读取');latest.responsePending=false;persist();return}
+      let copy;try{copy=res.clone()}catch{latest.response=unavailable('响应正文不可读取');latest.responsePending=false;persist();return}
+      void read(copy).then(data=>{
+        if(!current(id))return;
+        // Keep result fields only. Avoid persisting the full account/farm snapshot.
+        latest.responsePending=false;latest.response=data?.unavailable?data:Object.fromEntries(['ok','msg','error','gained','earned','count','results','room','quick'].filter(key=>data&&Object.hasOwn(data,key)).map(key=>[key,data[key]]));persist();
+      }).catch(()=>{if(current(id)){latest.response=unavailable('响应正文不可读取');latest.responsePending=false;persist()}});
+    }).catch(error=>{if(current(id)){latest.state='failed';latest.responsePending=false;latest.error=cleanText(error.message);persist()}});
+    return pending;
+  }
+  window.fetch=observe;
+  function status(){return {available:!!latest?.request,at:latest?.at??null,state:latest?.state||'empty',status:latest?.status??null,storageOK}}
+  function data(){return latest?JSON.parse(JSON.stringify(latest)):null}
+  function download(){
+    if(!latest?.request)return false;
+    const url=URL.createObjectURL(new Blob([JSON.stringify(latest,null,2)],{type:'application/json'}));
+    const link=document.createElement('a');link.href=url;link.download='farming-battle-settlement-'+new Date(latest.at).toISOString().replace(/[:.]/g,'-')+'.json';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);return true;
+  }
+  function paint(){
+    if(!ui)return;const s=status();ui.button.disabled=!s.available;
+    if(!latest){ui.note.textContent='结算后可导出 · 只保留最新一次';return}
+    const time=new Date(latest.at).toLocaleTimeString('zh-CN',{hour12:false});
+    ui.note.textContent=time+' · '+(s.state==='pending'?'等待服务器响应':s.state==='failed'?'上报失败':s.status===null?'已保存':'响应 '+s.status)+(storageOK?'':' · 仅本页内存保存');
+  }
+  function mount(parent){
+    ui?.box.remove();const box=document.createElement('section'),button=document.createElement('button'),note=document.createElement('p');
+    box.className='fh-report';button.type='button';button.className='fh-recheck';button.textContent='导出最新结算';note.className='fh-note';
+    button.onclick=()=>{try{download()}catch{note.textContent='导出失败，请重试'}};box.append(button,note);parent.append(box);ui={box,button,note};paint();
+  }
+  window.__farmBattleReport={status,data,download,mount,remove:()=>{removed=true;if(window.fetch===observe)window.fetch=original;ui?.box.remove();ui=null;delete window.__farmBattleReport}};
+})();
+
 /* Shared compact shell; one switch controls the entire battle routine. */
 (() => {
   window.__farmCompact?.remove();
@@ -2357,7 +2451,6 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 #farm-compact-controls details{border-top:1px solid #42604b;margin-top:12px;padding-top:9px}
 #farm-compact-controls summary{font-size:11px;color:#abc2af;cursor:pointer}
 #farm-compact-controls .fh-empty{font-size:11px;color:#abc2af;padding:4px 0 10px}
-#farm-compact-controls .fh-battle-controls[hidden]+.fh-stats{display:none}
 #farm-compact-controls .fh-key-count{font-size:11px;color:#bdd1c2;margin:4px 0;font-variant-numeric:tabular-nums}
 #farm-compact-controls .fh-stats>div{border:0!important;padding:5px 0 0!important;margin:0!important;font-size:10px!important;color:#abc2af!important}
 #farm-compact-controls .fh-task-state{border-top:1px solid #42604b;padding-top:8px;margin:12px 0 0;font-size:10px;color:#c7d9c9;overflow-wrap:anywhere}
@@ -2385,6 +2478,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 #farm-compact-controls .fh-log li{padding:4px 0;border-bottom:1px solid #2b4333;overflow-wrap:anywhere}
 #farm-compact-controls .fh-log time{color:#8fa995;margin-right:6px;font-variant-numeric:tabular-nums}
 #farm-compact-controls .fh-mini{font-size:10px;color:#c7d9c9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px}
+#farm-compact-controls .fh-report button:disabled{opacity:.45;cursor:default}
 #farm-compact-controls .fh-recheck{margin-top:6px;background:#c7dfb8;color:#213721;border:0;border-radius:4px;padding:4px 7px;font-size:11px}
 #farm-compact-controls .fh-footer{margin-top:9px!important;font-size:10px!important;color:#abc2af!important}
 #farm-compact-controls :is(button,input,select):focus-visible{outline:2px solid #e7d29d;outline-offset:2px}
@@ -2425,7 +2519,9 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
   const battle=make('div');battle.className='fh-battle-controls';
   const keyReadout=make('div');keyReadout.className='fh-key-count';
   battle.append(...rows,keyReadout,goal);pages.battle.append(empty,battle);
-  if(detail){const stats=make('details');stats.className='fh-stats';stats.append(make('summary','战斗状态'),detail);pages.battle.append(stats)}
+  window.__farmBattleReport?.mount(pages.battle);
+  let battleStats=null;
+  if(detail){battleStats=make('details');battleStats.className='fh-stats';battleStats.append(make('summary','战斗状态'),detail);pages.battle.append(battleStats)}
   if(farm)pages.field.append(farm);
   const automation=window.__farmAutomation;
   if(automation){pages.animal.append(automation.sections.animal);pages.workshop.append(automation.sections.workshop);pages.daily.append(automation.sections.daily)}
@@ -2472,18 +2568,18 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
   if(!previous)try{tab=localStorage.getItem('farm-helper.ui-tab')||'field'}catch{}
   if(!(tab in pages))tab='field';
   const gameBattle=()=>{const root=document.getElementById('battle-ui');return !!root&&!root.hidden&&!!root.getClientRects().length&&getComputedStyle(root).display!=='none'};
-  function show(id,save=true){if(id==='battle'&&!gameBattle())id='field';if(!(id in pages))return;if(tab!==id)earningsExecutionExpanded=false;tab=id;window.__farmEarnings?.setVisible(id==='earnings'&&!collapsed);for(const k of Object.keys(pages)){pages[k].hidden=k!==id;buttons[k].setAttribute('aria-selected',String(k===id));buttons[k].tabIndex=k===id?0:-1}place();if(save)try{localStorage.setItem('farm-helper.ui-tab',id)}catch{}}
+  function show(id,save=true){if(id==='battle'&&!gameBattle()&&!window.__farmBattleReport?.status?.().available)id='field';if(!(id in pages))return;if(tab!==id)earningsExecutionExpanded=false;tab=id;window.__farmEarnings?.setVisible(id==='earnings'&&!collapsed);for(const k of Object.keys(pages)){pages[k].hidden=k!==id;buttons[k].setAttribute('aria-selected',String(k===id));buttons[k].tabIndex=k===id?0:-1}place();if(save)try{localStorage.setItem('farm-helper.ui-tab',id)}catch{}}
   for(const id of Object.keys(pages))buttons[id].onclick=()=>show(id);
   tabs.onkeydown=e=>{const ids=Object.keys(pages).filter(id=>!buttons[id].hidden);if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();e.stopPropagation();show(e.key==='Home'?ids[0]:e.key==='End'?ids.at(-1):ids[(ids.indexOf(tab)+(e.key==='ArrowRight'?1:ids.length-1))%ids.length]);buttons[tab].focus()}};
   function folding(){window.__farmEarnings?.setVisible(tab==='earnings'&&!collapsed);body.hidden=collapsed;mini.hidden=!collapsed;fold.textContent=collapsed?'展开':'收起';fold.setAttribute('aria-expanded',String(!collapsed));window.__farmVersionGuard?.paint();place()}
   fold.onclick=()=>{collapsed=!collapsed;folding()};
   let wasOnBattlePage=null,lastFarmTab=tab==='battle'?'field':tab;
   function render(){
-    const onBattlePage=gameBattle();buttons.battle.hidden=!onBattlePage;
+    const onBattlePage=gameBattle();buttons.battle.hidden=!onBattlePage&&!window.__farmBattleReport?.status?.().available;
     if(onBattlePage&&wasOnBattlePage!==true)show('battle',false);
-    if(!onBattlePage&&tab==='battle')show(lastFarmTab,false);
-    if(!onBattlePage)lastFarmTab=tab;wasOnBattlePage=onBattlePage;
-    const ready=!!window.__farmCombat;empty.hidden=ready;battle.hidden=!ready;
+    if(!onBattlePage&&wasOnBattlePage===true&&tab==='battle')show(lastFarmTab,false);
+    if(!onBattlePage&&tab!=='battle')lastFarmTab=tab;wasOnBattlePage=onBattlePage;
+    const ready=!!window.__farmCombat;empty.hidden=ready||!onBattlePage;battle.hidden=!ready||!onBattlePage;if(battleStats)battleStats.hidden=!ready||!onBattlePage;
     let view=automation?.execution?.()||{status:'idle',title:'等待助手加载',reason:'',items:[],next:'',rows:[]};
     const visual=window.__farmCombat?.status?.();
     keyReadout.textContent='按键 keys · '+(visual?.keyCount??'—')+' 次';
@@ -2523,5 +2619,5 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 1.24.3 已开启；请查看面板中的游戏代码检查状态';
+  return '助手 1.25.0 已开启；请查看面板中的游戏代码检查状态';
 })();

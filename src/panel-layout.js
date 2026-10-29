@@ -32,7 +32,6 @@
 #farm-compact-controls details{border-top:1px solid #42604b;margin-top:12px;padding-top:9px}
 #farm-compact-controls summary{font-size:11px;color:#abc2af;cursor:pointer}
 #farm-compact-controls .fh-empty{font-size:11px;color:#abc2af;padding:4px 0 10px}
-#farm-compact-controls .fh-battle-controls[hidden]+.fh-stats{display:none}
 #farm-compact-controls .fh-key-count{font-size:11px;color:#bdd1c2;margin:4px 0;font-variant-numeric:tabular-nums}
 #farm-compact-controls .fh-stats>div{border:0!important;padding:5px 0 0!important;margin:0!important;font-size:10px!important;color:#abc2af!important}
 #farm-compact-controls .fh-task-state{border-top:1px solid #42604b;padding-top:8px;margin:12px 0 0;font-size:10px;color:#c7d9c9;overflow-wrap:anywhere}
@@ -60,6 +59,7 @@
 #farm-compact-controls .fh-log li{padding:4px 0;border-bottom:1px solid #2b4333;overflow-wrap:anywhere}
 #farm-compact-controls .fh-log time{color:#8fa995;margin-right:6px;font-variant-numeric:tabular-nums}
 #farm-compact-controls .fh-mini{font-size:10px;color:#c7d9c9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:4px}
+#farm-compact-controls .fh-report button:disabled{opacity:.45;cursor:default}
 #farm-compact-controls .fh-recheck{margin-top:6px;background:#c7dfb8;color:#213721;border:0;border-radius:4px;padding:4px 7px;font-size:11px}
 #farm-compact-controls .fh-footer{margin-top:9px!important;font-size:10px!important;color:#abc2af!important}
 #farm-compact-controls :is(button,input,select):focus-visible{outline:2px solid #e7d29d;outline-offset:2px}
@@ -100,7 +100,9 @@
   const battle=make('div');battle.className='fh-battle-controls';
   const keyReadout=make('div');keyReadout.className='fh-key-count';
   battle.append(...rows,keyReadout,goal);pages.battle.append(empty,battle);
-  if(detail){const stats=make('details');stats.className='fh-stats';stats.append(make('summary','战斗状态'),detail);pages.battle.append(stats)}
+  window.__farmBattleReport?.mount(pages.battle);
+  let battleStats=null;
+  if(detail){battleStats=make('details');battleStats.className='fh-stats';battleStats.append(make('summary','战斗状态'),detail);pages.battle.append(battleStats)}
   if(farm)pages.field.append(farm);
   const automation=window.__farmAutomation;
   if(automation){pages.animal.append(automation.sections.animal);pages.workshop.append(automation.sections.workshop);pages.daily.append(automation.sections.daily)}
@@ -147,18 +149,18 @@
   if(!previous)try{tab=localStorage.getItem('farm-helper.ui-tab')||'field'}catch{}
   if(!(tab in pages))tab='field';
   const gameBattle=()=>{const root=document.getElementById('battle-ui');return !!root&&!root.hidden&&!!root.getClientRects().length&&getComputedStyle(root).display!=='none'};
-  function show(id,save=true){if(id==='battle'&&!gameBattle())id='field';if(!(id in pages))return;if(tab!==id)earningsExecutionExpanded=false;tab=id;window.__farmEarnings?.setVisible(id==='earnings'&&!collapsed);for(const k of Object.keys(pages)){pages[k].hidden=k!==id;buttons[k].setAttribute('aria-selected',String(k===id));buttons[k].tabIndex=k===id?0:-1}place();if(save)try{localStorage.setItem('farm-helper.ui-tab',id)}catch{}}
+  function show(id,save=true){if(id==='battle'&&!gameBattle()&&!window.__farmBattleReport?.status?.().available)id='field';if(!(id in pages))return;if(tab!==id)earningsExecutionExpanded=false;tab=id;window.__farmEarnings?.setVisible(id==='earnings'&&!collapsed);for(const k of Object.keys(pages)){pages[k].hidden=k!==id;buttons[k].setAttribute('aria-selected',String(k===id));buttons[k].tabIndex=k===id?0:-1}place();if(save)try{localStorage.setItem('farm-helper.ui-tab',id)}catch{}}
   for(const id of Object.keys(pages))buttons[id].onclick=()=>show(id);
   tabs.onkeydown=e=>{const ids=Object.keys(pages).filter(id=>!buttons[id].hidden);if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();e.stopPropagation();show(e.key==='Home'?ids[0]:e.key==='End'?ids.at(-1):ids[(ids.indexOf(tab)+(e.key==='ArrowRight'?1:ids.length-1))%ids.length]);buttons[tab].focus()}};
   function folding(){window.__farmEarnings?.setVisible(tab==='earnings'&&!collapsed);body.hidden=collapsed;mini.hidden=!collapsed;fold.textContent=collapsed?'展开':'收起';fold.setAttribute('aria-expanded',String(!collapsed));window.__farmVersionGuard?.paint();place()}
   fold.onclick=()=>{collapsed=!collapsed;folding()};
   let wasOnBattlePage=null,lastFarmTab=tab==='battle'?'field':tab;
   function render(){
-    const onBattlePage=gameBattle();buttons.battle.hidden=!onBattlePage;
+    const onBattlePage=gameBattle();buttons.battle.hidden=!onBattlePage&&!window.__farmBattleReport?.status?.().available;
     if(onBattlePage&&wasOnBattlePage!==true)show('battle',false);
-    if(!onBattlePage&&tab==='battle')show(lastFarmTab,false);
-    if(!onBattlePage)lastFarmTab=tab;wasOnBattlePage=onBattlePage;
-    const ready=!!window.__farmCombat;empty.hidden=ready;battle.hidden=!ready;
+    if(!onBattlePage&&wasOnBattlePage===true&&tab==='battle')show(lastFarmTab,false);
+    if(!onBattlePage&&tab!=='battle')lastFarmTab=tab;wasOnBattlePage=onBattlePage;
+    const ready=!!window.__farmCombat;empty.hidden=ready||!onBattlePage;battle.hidden=!ready||!onBattlePage;if(battleStats)battleStats.hidden=!ready||!onBattlePage;
     let view=automation?.execution?.()||{status:'idle',title:'等待助手加载',reason:'',items:[],next:'',rows:[]};
     const visual=window.__farmCombat?.status?.();
     keyReadout.textContent='按键 keys · '+(visual?.keyCount??'—')+' 次';
