@@ -1,9 +1,9 @@
-/* Farming Season helper 1.23.0: original combat mechanics and unified controls. */
+/* Farming Season helper 1.23.1: original combat mechanics and unified controls. */
 (() => {
   if(location.hostname!=='farmingseason.io')throw Error('请只在 Farming Season 游戏页启动');
   const temp1=window.__farmGame||window.temp1;
   if(!temp1?.scene?.scenes)throw Error('未找到游戏实例，请使用扩展启动');
-  if(window.__farmLauncher?.status?.().version==='1.23.0')return '助手已开启，保留当前所有开关';
+  if(window.__farmLauncher?.status?.().version==='1.23.1')return '助手已开启，保留当前所有开关';
   const handoff={farm:window.__farmAutoFarm?.status?.(),automation:window.__farmAutomation?.status?.(),layout:window.__farmLayout?.status?.()};
   if(handoff.farm?.pending)throw Error('旧版农活尚未完成，请等队列完成后再次开启新版助手');
   window.__farmLauncher?.remove();
@@ -14,13 +14,23 @@
   function cleanup(){
     window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();window.__farmCompatibility?.remove();delete window.__farmUpdateCatalog;
   }
-  window.__farmLauncher={status:()=>({installed:true,version:'1.23.0',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
+  window.__farmLauncher={status:()=>({installed:true,version:'1.23.1',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{
 /* Pure planning over read-only snapshots. Inputs are regular direction/Space/E keys. */
 (() => {
   const finite=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y);
   const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
   function segmentDistance(p,a,b){const dx=b.x-a.x,dy=b.y-a.y,den=dx*dx+dy*dy,t=den?Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/den)):0;return Math.hypot(p.x-a.x-t*dx,p.y-a.y-t*dy)}
+  // Closest relative position over time, including a dash ending or a wall clamp.
+  // A shooting lane is not occupied everywhere at once: the arrow has to arrive.
+  function projectileDistance(position,q,until,immuneUntil=0){
+    const eta=q.eta||0,start=Math.max(0,eta,immuneUntil);if(start>=until)return Infinity;
+    const times=[start,...[.12,.24,.25,.45,.65].filter(t=>t>start&&t<until),until];
+    const relative=t=>{const p=position(t);return {x:p.x-q.x-q.vx*(t-eta),y:p.y-6-q.y-q.vy*(t-eta)}};
+    let previous=relative(start),closest=Math.hypot(previous.x,previous.y);
+    for(const t of times.slice(1)){const next=relative(t);closest=Math.min(closest,segmentDistance({x:0,y:0},previous,next));previous=next}
+    return closest;
+  }
   function threats(frame){
     const zones=[];
     for(const e of frame.enemies||[]){
@@ -32,8 +42,13 @@
       if(e.brain==='ghost'&&e.state==='appear'&&finite(e.lock))zones.push({kind:'circle',x:e.lock.x,y:e.lock.y,radius:(e.radius||12)+25,eta:Math.max(0,.6-e.t),message:'避开幽灵即将显形的位置'});
       if(e.hitDone)continue;
       if(e.brain==='archer'&&e.state==='windup'&&finite(e.lock)){
-        const dx=e.lock.x-e.x,dy=e.lock.y-(e.y-8),len=Math.hypot(dx,dy)||1,range=Math.min(190,len+50);
-        zones.push({kind:'charge',a:{x:e.x,y:e.y-8},b:{x:e.x+dx/len*range,y:e.y-8+dy/len*range},radius:13,eta:Math.max(0,.74-e.t),message:'离开弓箭手瞄准线'});
+        const late=frame.wave>=10,lockAt=late ? .4 : .5,fireAt=late ? .6 : .74;
+        // Before lock the aim follows the hero; advance now and re-evaluate after lock.
+        if(e.t>=lockAt){
+          const dx=e.lock.x-e.x,dy=e.lock.y-(e.y-8),len=Math.hypot(dx,dy)||1;
+          const a={x:e.x,y:e.y-8},vx=dx/len*175,vy=dy/len*175;
+          zones.push({kind:'shot',source:'arrow',a,b:{x:a.x+vx*3,y:a.y+vy*3},vx,vy,radius:14,eta:Math.max(0,fireAt-e.t),message:'侧移避开即将射出的箭，再接近弓箭手'});
+        }
       }
       if(e.name==='minotaur'&&e.state==='windup')zones.push({kind:'ellipse',x:e.x,y:e.y,rx:65,ry:42,eta:Math.max(0,.9-e.t),message:'远离牛头人砸地范围'});
       else if(e.boss&&!['minotaur','ratking'].includes(e.name)&&e.state==='windup')zones.push({kind:'circle',x:e.x,y:e.y,radius:85,eta:.3,message:'未知 Boss 蓄力，先远离'});
@@ -44,7 +59,7 @@
     return zones;
   }
   function zoneMargin(p,z){
-    if(z.kind==='charge')return segmentDistance(p,z.a,z.b)-z.radius;
+    if(z.kind==='charge'||z.kind==='shot')return segmentDistance(p,z.a,z.b)-z.radius;
     if(z.kind==='ellipse')return (Math.hypot((p.x-z.x)/z.rx,(p.y-z.y)/z.ry)-1)*Math.min(z.rx,z.ry);
     return Math.hypot(p.x-z.x,p.y-z.y)-z.radius;
   }
@@ -109,7 +124,12 @@
     const entrants=enemies.filter(e=>e.state==='enter').map(e=>({...e,x:gatePoint.x,y:gatePoint.y,d:distance(h,gatePoint),positionOnly:true}));
     const rally=!enemies.length&&['clear','break'].includes(frame.phase)?{...gatePoint,name:'gate',id:null,positionOnly:true,rally:true,d:distance(h,gatePoint)}:null;
     const target=attackTarget||entrants[0]||rally;
-    const nearbyDanger=zones.filter(z=>zoneMargin(h,z)<(z.source==='bomber'?24:z.alert??12));
+    const nearbyDanger=zones.filter(z=>{
+      if(zoneMargin(h,z)>=(z.source==='bomber'?24:z.alert??12))return false;
+      if(z.kind!=='shot')return true;
+      const along=((h.x-z.a.x)*z.vx+(h.y-6-z.a.y)*z.vy)/(175*175);
+      return z.eta+Math.max(0,along)<.85;
+    });
     const incoming=projectiles.filter(p=>{
       const dx=h.x-p.x,dy=h.y-6-p.y,v2=p.vx*p.vx+p.vy*p.vy;if(!v2)return false;
       const t=(dx*p.vx+dy*p.vy)/v2;
@@ -137,12 +157,12 @@
         const future={x:e.x+(e.vx||0)*.24,y:e.y+(e.vy||0)*.24};
         if(Math.min(segmentDistance(e,h,end),segmentDistance(future,h,end))<(e.radius||12)+24)return false;
       }
-      for(const q of projectiles){
-        if(distance(h,q)<240)return false;
-        const future={x:q.x+q.vx*.6,y:q.y+q.vy*.6};
-        if(segmentDistance(q,h,end)<30||segmentDistance(future,h,end)<30)return false;
+      const path=t=>{const travel=64*Math.min(1,t/.24)+moveSpeed*Math.max(0,t-.24);return clamp({x:h.x+vx*travel,y:h.y+vy*travel})};
+      for(const q of projectiles)if(projectileDistance(path,q,.65)<(q.kind==='fireball'?24:22))return false;
+      for(const z of zones){
+        if(z.kind==='shot'){if(projectileDistance(path,{...z,...z.a},.9)<22)return false;continue}
+        for(const d of [0,16,32,48,64])if(zoneMargin({x:h.x+vx*d,y:h.y+vy*d},z)<24)return false;
       }
-      for(const z of zones)for(const d of [0,16,32,48,64])if(zoneMargin({x:h.x+vx*d,y:h.y+vy*d},z)<24)return false;
       return true;
     }
     const directions=[[0,0],[1,0],[-1,0],[0,1],[0,-1],[Math.SQRT1_2,Math.SQRT1_2],[Math.SQRT1_2,-Math.SQRT1_2],[-Math.SQRT1_2,Math.SQRT1_2],[-Math.SQRT1_2,-Math.SQRT1_2]];
@@ -208,19 +228,14 @@
 
         }
         if(pressured)risk(Math.max(0,bodies-2)*14*riskScale);
-        for(const q of projectiles){
-          const end={x:q.x+q.vx*t,y:q.y+q.vy*t};
-          const margin=distance({x:p.x,y:p.y-6},end)-(q.kind==='fireball'?15:13);
-          if(!(dodge&&t<.24))risk(Math.max(0,12-margin)*18*riskScale);
-        }
+
       }
-      // Leave the firing line rather than rolling along an incoming projectile's path.
-      for(const q of incoming){
-        const end={x:q.x+q.vx*.8,y:q.y+q.vy*.8};
-        const p=position(.45);p.y-=6;
-        risk(Math.max(0,24-segmentDistance(p,q,end))*3*riskScale);
-      }
+      const immuneUntil=dodge ? .24 : h.dodgeT>=0?Math.max(0,.24-h.dodgeT):0;
+      for(const q of projectiles)risk(Math.max(0,(q.kind==='fireball'?16:14)-projectileDistance(position,q,.8,immuneUntil))*32*riskScale);
       for(const z of zones){
+        if(z.kind==='shot'){
+          risk(Math.max(0,z.radius-projectileDistance(position,{...z,...z.a},.9,immuneUntil))*32*riskScale);continue;
+        }
         const t=z.source==='bomber'?z.eta:Math.min(.65,Math.max(.15,z.eta)),p=position(t),margin=zoneMargin(p,z);
         if(z.source==='bomber'){
           // Do not assume an early dodge still protects when the fuse actually expires.
@@ -2477,5 +2492,5 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 1.23.0 已开启；请查看面板中的游戏代码检查状态';
+  return '助手 1.23.1 已开启；请查看面板中的游戏代码检查状态';
 })();
