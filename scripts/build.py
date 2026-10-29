@@ -5,7 +5,7 @@ import zipfile
 root = Path(__file__).resolve().parents[1]
 bot = root / 'src'
 ext = root / 'extension'
-version = '1.24.1'
+version = '1.24.2'
 modules = [
     'battle-planner.js', 'update-catalog.js', 'compatibility.js', 'version-guard.js', 'activity-store.js',
     'verification-guard.js', 'farm-rules.js', 'workshop-rules.js',

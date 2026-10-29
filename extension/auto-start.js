@@ -28,6 +28,6 @@
     if(e.source!==window||e.origin!==location.origin||e.data?.channel!=='farm-input-request')return;
     const {id,keys,stop=false}=e.data;if(typeof id!=='string'||id.length>80||!Array.isArray(keys)||keys.length>6)return;
     let result;try{result=await chrome.runtime.sendMessage({operation:'battle-input',keys,stop})}catch(error){result={ok:false,message:error.message}}
-    window.postMessage({channel:'farm-input-result',id,ok:result?.ok===true,message:result?.message||''},location.origin);
+    window.postMessage({channel:'farm-input-result',id,ok:result?.ok===true,paused:result?.paused===true,message:result?.message||''},location.origin);
   });
 })();

@@ -1,6 +1,6 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 function boot(){
- let now=10000,focused=true,modal=false,deliveryFailure=false;const timers=new Map(),intervals=[],listeners={},keysEvents=[];let tid=0;
+ let now=10000,focused=true,modal=false,deliveryFailure=false,deliveryPause=false;const timers=new Map(),intervals=[],listeners={},keysEvents=[];let tid=0;
  const listen=(name,fn)=>(listeners[name]??=[]).push(fn);
  const unlisten=(name,fn)=>listeners[name]=(listeners[name]||[]).filter(f=>f!==fn);
  const el=()=>({hidden:false,getClientRects:()=>[{}]});
@@ -27,7 +27,8 @@ function boot(){
   setImmediate(()=>{
    let ok=true,messageText='';try{
     if(deliveryFailure&&!message.stop)throw Error('native dispatch failed');
-    if(!message.stop&&!window.__farmBattleInput.prepare())throw Error('input blocked');
+    const paused=!message.stop&&(deliveryPause||!window.__farmBattleInput.prepare());
+    if(paused){const e={source:window,origin:'https://farmingseason.io',data:{channel:'farm-input-result',id:message.id,ok:true,paused:true,message:'游戏暂不可输入'}};for(const fn of listeners.message||[])fn(e);return}
     const wanted=new Set(message.stop?[]:message.keys.filter(k=>k.startsWith('Arrow')));
     for(const code of [...nativeHeld])if(!wanted.has(code)){emit(code,false);nativeHeld.delete(code)}
     for(const code of wanted)if(!nativeHeld.has(code)){emit(code,true);nativeHeld.add(code)}
@@ -40,7 +41,7 @@ function boot(){
  for(const file of ['src/battle-planner.js','src/combat-controller.js','src/combat-input.js'])vm.runInContext(fs.readFileSync(file,'utf8'),scope);
  const fire=(type,code,target=null)=>{for(const fn of listeners[type]||[])fn({type,code,target,isTrusted:true})};
  const flush=()=>new Promise(setImmediate);
- return {deliveryFailure:v=>deliveryFailure=v,flush,window,document,scene,hero,keys,keysEvents,screen,timers,originalDodge,originalStorm,fire,tick:async()=>{intervals[0]();await flush();intervals[0]();await flush()},advance:n=>now+=n,focus:v=>focused=v,modal:v=>modal=v};
+ return {deliveryPause:v=>deliveryPause=v,deliveryFailure:v=>deliveryFailure=v,flush,window,document,scene,hero,keys,keysEvents,screen,timers,originalDodge,originalStorm,fire,tick:async()=>{intervals[0]();await flush();intervals[0]();await flush()},advance:n=>now+=n,focus:v=>focused=v,modal:v=>modal=v};
 }
 (async()=>{
 let b=boot();b.window.__farmCombat.set('enabled',true);await b.tick();assert(b.keys.RIGHT.isDown);assert(b.window.__farmCombat.status().skills&&b.window.__farmCombat.status().perks,'one switch enables skills and perks');
@@ -78,6 +79,10 @@ console.log('PASS: obsolete race preference ignored, manual recording blocks mov
 // The input adapter leaves new game-owned telemetry untouched.
 b=boot();b.window.__farmCombat.set('enabled',true);const telemetry=({kd:[],taps:3,gp:0,tMean:200,tSd:35,tSame:0,ivMean:300,ivSd:60,ivSame:0,hMean:400,hSd:80,hid:1,wd:0,hl:0});b.scene.run.sig=telemetry;b.window.__farmBattleInput.apply(b.scene,{keys:['ArrowRight','Space']});await b.flush();assert.equal(b.scene.run.sig,telemetry);assert.equal(telemetry.kd.length,2,'game keyboard listeners count actual dispatched movement and skill events');assert.equal(b.scene.doDodge,b.originalDodge);assert.equal(b.scene.doStorm,b.originalStorm);b.window.__farmCombat.remove();
 console.log('PASS: updated game telemetry is counted by game keyboard listeners, with no counter replacement');
+b=boot();b.deliveryPause(true);b.window.__farmCombat.set('enabled',true);await b.tick();
+assert(b.window.__farmCombat.status().enabled,'transient delivery pause preserves automatic battle and upgrades');assert.equal(b.window.__farmCombat.status().phase,'waiting');assert.equal(b.keysEvents.length,0);
+b.deliveryPause(false);await b.tick();assert.equal(b.window.__farmCombat.status().phase,'running');assert(b.keys.RIGHT.isDown,'automatically resumes when the game can receive input');b.window.__farmCombat.remove();await b.flush();
+console.log('PASS: transient delivery pause keeps the switch enabled and resumes without user input');
 b=boot();b.deliveryFailure(true);b.window.__farmCombat.set('enabled',true);await b.tick();assert.equal(b.window.__farmCombat.status().enabled,false);assert.equal(b.window.__farmCombat.status().phase,'error');assert.equal(b.scene.run.dodges,0);assert.equal(b.hero.stormT,-1);assert(!b.keys.RIGHT.isDown,'failed browser input clears movement without falling back to internal controls');b.window.__farmCombat.remove();
 b=boot();b.document.activeElement={matches:()=>true};b.window.__farmCombat.set('enabled',true);await b.tick();assert.equal(b.keysEvents.length,0,'editing never receives automated arrow/skill events');b.window.__farmCombat.remove();
 console.log('PASS: transport failure disables battle instead of internal fallback, and editing blocks keyboard automation');

@@ -16,7 +16,7 @@
   function reply(e){
     if(e.source!==window||e.origin!==location.origin||e.data?.channel!=='farm-input-result')return;
     const x=pending.get(e.data.id);if(!x)return;pending.delete(e.data.id);clearTimeout(x.timer);
-    e.data.ok?x.resolve():x.reject(Error(e.data.message||'自动键盘输入失败'));
+    e.data.ok?x.resolve({paused:e.data.paused===true,message:e.data.message}):x.reject(Error(e.data.message||'自动键盘输入失败'));
   }
   function request(keys,stop=false){
     used=true;return new Promise((resolve,reject)=>{
@@ -49,7 +49,8 @@
     const task=desired;desired=null;busy=true;const generation=epoch,s=task.scene;
     const before={dodges:s.run?.dodges||0,storm:s.hero.stormT};
     try{
-      await request(task.keys);
+      const result=await request(task.keys);
+      if(!removed&&generation===epoch&&result.paused){window.__farmCombat?.pauseInput?.(result.message||'等待游戏恢复输入');return}
       if(!removed&&generation===epoch){const dodges=Math.max(0,(s.run?.dodges||0)-before.dodges);completed.dodges+=dodges;if(task.intent==='travel')completed.travelDodges+=dodges;if(task.keys.includes('KeyE')&&before.storm<0&&s.hero.stormT>=0)completed.casts++}
     }catch(error){
       if(!removed&&generation===epoch){fallback();window.__farmCombat?.fail?.(error.message)}

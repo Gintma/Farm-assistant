@@ -23,28 +23,33 @@
     if(s.attached){s.attached=false;await FarmDebugger.release(id,'keyboard')}
     if(failure)throw failure;
   }
+  async function pause(tabId,s,message){
+    await clear(tabId,s);return {ok:true,paused:true,message};
+  }
   async function send(tabId,keys,stop=false,sourceUrl=null){
     if(!Array.isArray(keys)||keys.length>6||new Set(keys).size!==keys.length||keys.some(k=>!Object.hasOwn(codes,k))||keys.includes('Space')&&keys.includes('KeyE'))throw Error('战斗输入格式无效');
     if(typeof stop!=='boolean'||stop&&keys.length)throw Error('战斗输入格式无效');
     const s=get(tabId);if(stop)s.epoch++;const epoch=s.epoch;return serial(s,async()=>{
       if(stop){await clear(tabId,s);s.failed=false;return {ok:true}}
-      if(epoch!==s.epoch)return {ok:true};
       try{
         if(s.failed)throw Error('调试连接已断开，请重新开启自动战斗');
+        if(epoch!==s.epoch)return {ok:true,paused:true,message:'输入请求已取消，等待下一次状态检查'};
         const valid=()=>epoch===s.epoch&&!s.failed;
         const tab=await chrome.tabs.get(tabId);
-        if(!tab.active||new URL(tab.url||sourceUrl).origin!=='https://farmingseason.io')throw Error('游戏标签页不可输入');
+        if(new URL(tab.url||sourceUrl).origin!=='https://farmingseason.io')throw Error('游戏标签页已变化，自动战斗已停止');
+        if(!tab.active)return await pause(tabId,s,'游戏标签页未激活，等待返回游戏');
         await FarmDebugger.acquire(tabId,'keyboard');s.attached=true;
         const version=chrome.runtime.getManifest().version;
-        const ready=value(await call(tabId,'Runtime.evaluate',{expression:'location.origin==="https://farmingseason.io"&&window.__farmLauncher?.status?.().version==='+JSON.stringify(version)+'&&window.__farmBattleInput?.prepare?.()===true',returnByValue:true}));
-        if(!ready)throw Error('游戏暂停、页面隐藏或正在手动操作，已停止自动键盘输入');
+        const readiness=value(await call(tabId,'Runtime.evaluate',{expression:'(()=>{const compatible=location.origin==="https://farmingseason.io"&&window.__farmLauncher?.status?.().version==='+JSON.stringify(version)+'&&typeof window.__farmBattleInput?.prepare==="function";return {compatible,ready:compatible&&window.__farmBattleInput.prepare()===true}})()',returnByValue:true}));
+        if(readiness?.compatible!==true)throw Error('助手版本或输入入口不匹配，请重新加载扩展并刷新游戏');
+        if(readiness.ready!==true)return await pause(tabId,s,'游戏暂不可输入，等待升级选择、继续或恢复游戏');
         const wanted=new Set(keys.filter(k=>k.startsWith('Arrow')));
         for(const code of [...s.held])if(!wanted.has(code)){await key(tabId,code,false);s.held.delete(code)}
         for(const code of wanted)if(!s.held.has(code)){s.held.add(code);await key(tabId,code,true,valid)}
         for(const code of keys.filter(k=>!k.startsWith('Arrow'))){s.held.add(code);await key(tabId,code,true,valid);await key(tabId,code,false);s.held.delete(code)}
         clearTimeout(s.timer);s.timer=setTimeout(()=>{s.epoch++;void serial(s,()=>clear(tabId,s)).catch(()=>{})},400);
         return {ok:true};
-      }catch(error){await clear(tabId,s).catch(()=>{});throw error}
+      }catch(error){const cancelled=epoch!==s.epoch&&!s.failed;await clear(tabId,s).catch(()=>{});if(cancelled)return {ok:true,paused:true,message:'输入请求已取消，等待下一次状态检查'};throw error}
     });
   }
   chrome.debugger.onDetach.addListener(source=>{const s=states.get(source.tabId);if(s){clearTimeout(s.timer);if(s.attached)s.failed=true;s.epoch++;s.attached=false;s.held.clear()}});

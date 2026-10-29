@@ -1,9 +1,9 @@
-/* Farming Season helper 1.24.1: original combat mechanics and unified controls. */
+/* Farming Season helper 1.24.2: original combat mechanics and unified controls. */
 (() => {
   if(location.hostname!=='farmingseason.io')throw Error('请只在 Farming Season 游戏页启动');
   const temp1=window.__farmGame||window.temp1;
   if(!temp1?.scene?.scenes)throw Error('未找到游戏实例，请使用扩展启动');
-  if(window.__farmLauncher?.status?.().version==='1.24.1')return '助手已开启，保留当前所有开关';
+  if(window.__farmLauncher?.status?.().version==='1.24.2')return '助手已开启，保留当前所有开关';
   const handoff={farm:window.__farmAutoFarm?.status?.(),automation:window.__farmAutomation?.status?.(),layout:window.__farmLayout?.status?.()};
   if(handoff.farm?.pending)throw Error('旧版农活尚未完成，请等队列完成后再次开启新版助手');
   window.__farmLauncher?.remove();
@@ -14,7 +14,7 @@
   function cleanup(){
     window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();window.__farmCompatibility?.remove();delete window.__farmUpdateCatalog;
   }
-  window.__farmLauncher={status:()=>({installed:true,version:'1.24.1',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
+  window.__farmLauncher={status:()=>({installed:true,version:'1.24.2',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{
 /* Pure planning over read-only snapshots. Inputs are regular direction/Space/E keys. */
 (() => {
@@ -1926,7 +1926,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
   function reply(e){
     if(e.source!==window||e.origin!==location.origin||e.data?.channel!=='farm-input-result')return;
     const x=pending.get(e.data.id);if(!x)return;pending.delete(e.data.id);clearTimeout(x.timer);
-    e.data.ok?x.resolve():x.reject(Error(e.data.message||'自动键盘输入失败'));
+    e.data.ok?x.resolve({paused:e.data.paused===true,message:e.data.message}):x.reject(Error(e.data.message||'自动键盘输入失败'));
   }
   function request(keys,stop=false){
     used=true;return new Promise((resolve,reject)=>{
@@ -1959,7 +1959,8 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     const task=desired;desired=null;busy=true;const generation=epoch,s=task.scene;
     const before={dodges:s.run?.dodges||0,storm:s.hero.stormT};
     try{
-      await request(task.keys);
+      const result=await request(task.keys);
+      if(!removed&&generation===epoch&&result.paused){window.__farmCombat?.pauseInput?.(result.message||'等待游戏恢复输入');return}
       if(!removed&&generation===epoch){const dodges=Math.max(0,(s.run?.dodges||0)-before.dodges);completed.dodges+=dodges;if(task.intent==='travel')completed.travelDodges+=dodges;if(task.keys.includes('KeyE')&&before.storm<0&&s.hero.stormT>=0)completed.casts++}
     }catch(error){
       if(!removed&&generation===epoch){fallback();window.__farmCombat?.fail?.(error.message)}
@@ -2091,7 +2092,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     return scene?.mode!=='lobby'&&Array.isArray(downs)?downs.length:null;
   }
   const timer=setInterval(observe,60);
-  window.__farmCombat={set,fail:message=>{set('enabled',false);state={...state,phase:'error',message}},status:()=>({...options,...state,keyCount:keyCount(),inputTransport:window.__farmBattleInput?.status?.().transport,goldGoal:window.__farmCombatGoal?.status?.(),manualPaused:Date.now()<manualUntil||manualKeys.size>0||manualPointer,choices:window.__farmCombatPerks?.status?.().choices??state.choices,perkMessage:window.__farmCombatPerks?.status?.().message,selecting:options.enabled&&window.__farmCombatPerks?.status?.().waiting}),remove:()=>{
+  window.__farmCombat={set,pauseInput:wait,fail:message=>{set('enabled',false);state={...state,phase:'error',message}},status:()=>({...options,...state,keyCount:keyCount(),inputTransport:window.__farmBattleInput?.status?.().transport,goldGoal:window.__farmCombatGoal?.status?.(),manualPaused:Date.now()<manualUntil||manualKeys.size>0||manualPointer,choices:window.__farmCombatPerks?.status?.().choices??state.choices,perkMessage:window.__farmCombatPerks?.status?.().message,selecting:options.enabled&&window.__farmCombatPerks?.status?.().waiting}),remove:()=>{
     set('enabled',false);clearInterval(timer);mortarTracks.clear();window.__farmCombatPerks?.remove();
     window.removeEventListener('keydown',manual,true);window.removeEventListener('keyup',manual,true);window.removeEventListener('pointerdown',manual,true);window.removeEventListener('pointerup',manual,true);window.removeEventListener('pointercancel',manual,true);window.removeEventListener('blur',blur);window.removeEventListener('pagehide',hide);document.removeEventListener('visibilitychange',visibility);
     window.__farmBattleInput?.remove();delete window.__farmCombat;
@@ -2539,5 +2540,5 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 1.24.1 已开启；请查看面板中的游戏代码检查状态';
+  return '助手 1.24.2 已开启；请查看面板中的游戏代码检查状态';
 })();
