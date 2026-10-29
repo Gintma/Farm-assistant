@@ -88,7 +88,7 @@
     if(!ui.dirty&&document.activeElement!==ui.input)ui.input.value=target===null?'':String(target);
     ui.input.placeholder=target===null?'读取额度中…':'';
     ui.progress.textContent=message;
-    ui.source.textContent=manualTarget===null?'默认：今日战斗上限 − 本局开始前今日累计；开局后固定本局目标。':'手动目标；点击“恢复默认”重新按今日剩余额度计算。';
+    ui.source.textContent=manualTarget===null?'默认：今日剩余战斗额度':'已设置手动目标';
   }
   function mount(parent){
     const box=document.createElement('section'),label=document.createElement('label'),input=document.createElement('input'),actions=document.createElement('div'),apply=document.createElement('button'),reset=document.createElement('button'),progress=document.createElement('p'),source=document.createElement('p');

@@ -7,13 +7,14 @@ function boot(){
   replaceChildren(...nodes){for(const n of this.children)if(n&&typeof n==='object')n.parentElement=null;this.children=[];this.append(...nodes)}
   remove(){if(this.parentElement)this.parentElement.children=this.parentElement.children.filter(x=>x!==this);this.parentElement=null}
   setAttribute(k,v){this.attrs[k]=v}getAttribute(k){return this.attrs[k]??null}removeAttribute(k){delete this.attrs[k]}
-  querySelector(){return this.isCombatRow?{}:null}getBoundingClientRect(){return {width:268,height:400}}focus(){}
+  querySelector(){return this.isCombatRow?{}:null}getClientRects(){return this.hidden?[]:[{}]}getBoundingClientRect(){return {width:268,height:400}}focus(){}
  }
  const el=t=>new Element(t),panel=el('aside'),title=el('div'),combat=el('div'),goal=el('form'),farm=el('div'),footer=el('p');combat.isCombatRow=true;panel.id='farm-compact-controls';farm.id='farm-auto-controls';title.textContent='农场助手';panel.append(title,combat,goal,farm,footer);
- const nodes=n=>[n,...n.children.filter(x=>x&&typeof x==='object').flatMap(nodes)];const document={head:el('head'),createElement:el,createTextNode:t=>t,getElementById:id=>nodes(panel).find(n=>n.id===id)||null};
+ const battleRoot=el('div');battleRoot.hidden=true;
+ const nodes=n=>[n,...n.children.filter(x=>x&&typeof x==='object').flatMap(nodes)];const document={head:el('head'),createElement:el,createTextNode:t=>t,getElementById:id=>id==='battle-ui'?battleRoot:nodes(panel).find(n=>n.id===id)||null};
  const window={innerWidth:1200,innerHeight:800,__farmLauncher:{status:()=>({version:'1.21.0'})},__farmCompact:{remove(){}},__farmAutomation:{sections:{animal:el('section'),workshop:el('section'),daily:el('section')},state:el('p'),recheck:el('button'),execution:()=>view},__farmEarnings:{mount:p=>p.append(el('section')),setVisible:v=>visible.push(v)},addEventListener(){},removeEventListener(){}};
  const context={window,document,localStorage:{getItem:k=>store.get(k),setItem:(k,v)=>store.set(k,v)},setInterval:f=>(timers.push(f),timers.length),clearInterval(){},getComputedStyle:()=>({display:'block'})};vm.runInNewContext(fs.readFileSync('src/panel-layout.js','utf8'),context);
- return {api:window.__farmLayout,panel,nodes,view,visible,store,render:()=>timers.forEach(f=>f()),setView:v=>view=v};
+ return {api:window.__farmLayout,window,battleRoot,panel,nodes,view,visible,store,render:()=>timers.forEach(f=>f()),setView:v=>view=v};
 }
 const b=boot(),all=()=>b.nodes(b.panel),find=cls=>all().find(n=>n.classList.contains(cls));
 const head=find('fh-head'),body=find('fh-body'),tabs=find('fh-tabs'),scroll=find('fh-scroll');assert.equal(head.parentElement,b.panel);assert.equal(tabs.parentElement,body);assert.equal(scroll.parentElement,body);assert(!b.nodes(scroll).includes(head));assert(!b.nodes(scroll).includes(tabs),'navigation stays outside scrolling content');
@@ -23,3 +24,13 @@ b.setView({...b.view,status:'error',reason:'读取失败502'});b.render();assert
 b.api.show('animal');assert.equal(b.api.status().tab,'animal');assert.equal(b.store.get('farm-helper.ui-tab'),'animal');const fold=find('fh-fold');fold.onclick();assert.equal(body.hidden,true);assert.equal(fold.attrs['aria-expanded'],'false');fold.onclick();assert.equal(body.hidden,false);
 const prior=b.api.status().position;head.onkeydown({key:'ArrowLeft',target:head,preventDefault(){},stopPropagation(){}});assert.equal(b.api.status().position.x,prior.x-10);b.api.remove();assert(!b.nodes(b.panel).some(n=>n.classList.contains('fh-head')));
 console.log('PASS: fixed header/tabs outside scroll, collapsed material details, earnings status disclosure, visible errors, tab persistence, collapse/keyboard positioning and cleanup');
+
+const c=boot(),findC=cls=>c.nodes(c.panel).find(n=>n.classList.contains(cls));
+c.battleRoot.hidden=false;let count=0;c.window.__farmCombat={status:()=>({enabled:false,keyCount:count})};c.render();
+assert.equal(c.api.status().tab,'battle');const readout=findC('fh-key-count');
+assert.equal(readout.textContent,'按键 keys · 0 次');assert.equal(readout.parentElement,findC('fh-battle-controls'),'live count stays outside collapsed details');
+count=42;c.render();assert.equal(readout.textContent,'按键 keys · 42 次','display refreshes while automatic battle is disabled');
+count=null;c.render();assert.equal(readout.textContent,'按键 keys · — 次','missing count is not shown as zero');
+assert(!c.nodes(c.panel).some(n=>n.textContent.includes('保留正常受伤与死亡')),'long battle instructions removed');
+c.battleRoot.hidden=true;c.render();assert.equal(c.nodes(c.panel).find(n=>n.id==='farm-helper-battle-page').hidden,true,'readout leaves view with battle page');
+c.api.remove();console.log('PASS: compact live keys readout updates outside disclosures and follows battle page visibility');

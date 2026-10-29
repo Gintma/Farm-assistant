@@ -33,6 +33,7 @@
 #farm-compact-controls summary{font-size:11px;color:#abc2af;cursor:pointer}
 #farm-compact-controls .fh-empty{font-size:11px;color:#abc2af;padding:4px 0 10px}
 #farm-compact-controls .fh-battle-controls[hidden]+.fh-stats{display:none}
+#farm-compact-controls .fh-key-count{font-size:11px;color:#bdd1c2;margin:4px 0;font-variant-numeric:tabular-nums}
 #farm-compact-controls .fh-stats>div{border:0!important;padding:5px 0 0!important;margin:0!important;font-size:10px!important;color:#abc2af!important}
 #farm-compact-controls .fh-task-state{border-top:1px solid #42604b;padding-top:8px;margin:12px 0 0;font-size:10px;color:#c7d9c9;overflow-wrap:anywhere}
 #farm-compact-controls .fh-execution{margin-top:16px;padding:12px;background:#0d1b14;border:1px solid #304738;border-radius:7px;box-sizing:border-box}
@@ -96,7 +97,9 @@
     const tab=make('button',name),page=make('div');tab.type='button';tab.className='fh-tab';tab.id='farm-helper-tab-'+id;tab.setAttribute('role','tab');page.id='farm-helper-'+id+'-page';page.setAttribute('role','tabpanel');page.setAttribute('aria-labelledby',tab.id);tab.setAttribute('aria-controls',page.id);pages[id]=page;buttons[id]=tab;tabs.append(tab);
   }
   const empty=make('div','状态读取模式需要通过扩展启动。');empty.className='fh-empty';
-  const battle=make('div');battle.className='fh-battle-controls';const waveNote=make('p','保留正常受伤与死亡；状态不可用时暂停输入。页面可见时失焦继续；页面隐藏或游戏暂停时停止输入；Esc 关闭自动战斗；结算确认后无操作5秒回村庄。');waveNote.className='fh-note';battle.append(...rows,waveNote,goal);pages.battle.append(empty,battle);
+  const battle=make('div');battle.className='fh-battle-controls';
+  const keyReadout=make('div');keyReadout.className='fh-key-count';
+  battle.append(...rows,keyReadout,goal);pages.battle.append(empty,battle);
   if(detail){const stats=make('details');stats.className='fh-stats';stats.append(make('summary','战斗状态'),detail);pages.battle.append(stats)}
   if(farm)pages.field.append(farm);
   const automation=window.__farmAutomation;
@@ -158,8 +161,9 @@
     const ready=!!window.__farmCombat;empty.hidden=ready;battle.hidden=!ready;
     let view=automation?.execution?.()||{status:'idle',title:'等待助手加载',reason:'',items:[],next:'',rows:[]};
     const visual=window.__farmCombat?.status?.();
+    keyReadout.textContent='按键 keys · '+(visual?.keyCount??'—')+' 次';
     if(onBattlePage&&(visual?.enabled||visual?.selecting||(tab==='battle'&&(visual?.phase==='error'||visual?.goldGoal?.triggered)))){
-      view={status:visual.selecting?'waiting':visual.phase==='error'?'error':visual.phase==='running'?'running':'waiting',title:'战斗 · 生存优先',reason:visual.selecting?visual.perkMessage:visual.message||'等待状态',items:['怪物 '+(visual.enemies||0)+'（入场 '+(visual.entering||0)+' · 隐身 '+(visual.hiddenEnemies||0)+'） · 弹道 '+(visual.projectiles||0),'风暴 '+(visual.casts||0)+' 次 · 闪避 '+(visual.dodges||0)+' 次 · 已选升级 '+(visual.choices||0)+' 次'],next:visual.selecting?'升级随机等待 1.1～3.5 秒，按原优先级选择':'正常受伤；请保持游戏页面可见，Esc 停止',rows:[{label:'状态',text:visual.recognized?'玩家状态正常 · 控制耗时 '+(visual.frameMs||0)+'ms':'等待有效状态'},{label:'策略',text:visual.riskLevel==='survive'?'优先生存':'等待判断'},{label:'效率',text:(visual.killsPerMinute==null?'统计中':visual.killsPerMinute+' 击杀/分')+' · 受击 '+(visual.hits||0)+' 次'},{label:'移动',text:'赶路闪避 '+(visual.travelDodges||0)+' 次 · 脱困 '+(visual.unsticks||0)+' 次'}]};
+      view={status:visual.selecting?'waiting':visual.phase==='error'?'error':visual.phase==='running'?'running':'waiting',title:'战斗 · 生存优先',reason:visual.selecting?visual.perkMessage:visual.message||'等待状态',items:['怪物 '+(visual.enemies||0)+'（入场 '+(visual.entering||0)+' · 隐身 '+(visual.hiddenEnemies||0)+'） · 弹道 '+(visual.projectiles||0),'风暴 '+(visual.casts||0)+' 次 · 闪避 '+(visual.dodges||0)+' 次 · 已选升级 '+(visual.choices||0)+' 次'],next:'',rows:[{label:'状态',text:visual.recognized?'玩家状态正常 · 控制耗时 '+(visual.frameMs||0)+'ms':'等待有效状态'},{label:'策略',text:visual.riskLevel==='survive'?'优先生存':'等待判断'},{label:'效率',text:(visual.killsPerMinute==null?'统计中':visual.killsPerMinute+' 击杀/分')+' · 受击 '+(visual.hits||0)+' 次'},{label:'移动',text:'赶路闪避 '+(visual.travelDodges||0)+' 次 · 脱困 '+(visual.unsticks||0)+' 次'}]};
     }
     if(onBattlePage&&visual?.goldGoal){const g=visual.goldGoal;view.rows.push({label:'本局金币',text:g.earned+' / '+(g.target??'读取中')});if(g.triggered){view.status='idle';view.title='战斗目标已达成';view.reason=g.message;view.next='已停止自动战斗，不会自动再次开局'}}
     const returning=window.__farmCombatReturn?.status?.();

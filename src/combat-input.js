@@ -101,8 +101,14 @@
       state={...state,phase:'running',message:action.message,target:action.target||'',enemies:frame.enemies.length,entering:frame.enemies.filter(e=>e.state==='enter').length,hiddenEnemies:frame.enemies.filter(e=>e.phased||e.state==='appear').length,attackable:frame.enemies.filter(e=>e.hittable&&e.state!=='enter').length,projectiles:frame.projectiles.length,recognized:true,frameMs:Math.round(performance.now()-started),casts:state.casts+result.casts,dodges:state.dodges+result.dodges,travelDodges:state.travelDodges+(result.travelDodges??(action.intent==='travel'?result.dodges:0)),intent:action.intent,riskLevel:action.riskLevel,killsPerMinute:seconds>=15?Math.round(kills*60/seconds):null,hits:s.run?.hits??0,threats:action.threats||0,hp:h.hp,wave:s.wave};
     }catch(error){set('enabled',false);state={...state,phase:'error',message:error.message}}
   }
+  // Match the game's exported stats.sig.keys without writing its telemetry.
+  function keyCount(){
+    const scene=(window.__farmGame||window.temp1)?.scene?.scenes?.find(s=>s.sys?.settings?.key==='battle');
+    const downs=scene?.run?.sig?.kd;
+    return scene?.mode!=='lobby'&&Array.isArray(downs)?downs.length:null;
+  }
   const timer=setInterval(observe,60);
-  window.__farmCombat={set,fail:message=>{set('enabled',false);state={...state,phase:'error',message}},status:()=>({...options,...state,inputTransport:window.__farmBattleInput?.status?.().transport,goldGoal:window.__farmCombatGoal?.status?.(),manualPaused:Date.now()<manualUntil||manualKeys.size>0||manualPointer,choices:window.__farmCombatPerks?.status?.().choices??state.choices,perkMessage:window.__farmCombatPerks?.status?.().message,selecting:options.enabled&&window.__farmCombatPerks?.status?.().waiting}),remove:()=>{
+  window.__farmCombat={set,fail:message=>{set('enabled',false);state={...state,phase:'error',message}},status:()=>({...options,...state,keyCount:keyCount(),inputTransport:window.__farmBattleInput?.status?.().transport,goldGoal:window.__farmCombatGoal?.status?.(),manualPaused:Date.now()<manualUntil||manualKeys.size>0||manualPointer,choices:window.__farmCombatPerks?.status?.().choices??state.choices,perkMessage:window.__farmCombatPerks?.status?.().message,selecting:options.enabled&&window.__farmCombatPerks?.status?.().waiting}),remove:()=>{
     set('enabled',false);clearInterval(timer);mortarTracks.clear();window.__farmCombatPerks?.remove();
     window.removeEventListener('keydown',manual,true);window.removeEventListener('keyup',manual,true);window.removeEventListener('pointerdown',manual,true);window.removeEventListener('pointerup',manual,true);window.removeEventListener('pointercancel',manual,true);window.removeEventListener('blur',blur);window.removeEventListener('pagehide',hide);document.removeEventListener('visibilitychange',visibility);
     window.__farmBattleInput?.remove();delete window.__farmCombat;

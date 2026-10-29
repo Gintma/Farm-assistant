@@ -1,9 +1,9 @@
-/* Farming Season helper 1.24.0: original combat mechanics and unified controls. */
+/* Farming Season helper 1.24.1: original combat mechanics and unified controls. */
 (() => {
   if(location.hostname!=='farmingseason.io')throw Error('请只在 Farming Season 游戏页启动');
   const temp1=window.__farmGame||window.temp1;
   if(!temp1?.scene?.scenes)throw Error('未找到游戏实例，请使用扩展启动');
-  if(window.__farmLauncher?.status?.().version==='1.24.0')return '助手已开启，保留当前所有开关';
+  if(window.__farmLauncher?.status?.().version==='1.24.1')return '助手已开启，保留当前所有开关';
   const handoff={farm:window.__farmAutoFarm?.status?.(),automation:window.__farmAutomation?.status?.(),layout:window.__farmLayout?.status?.()};
   if(handoff.farm?.pending)throw Error('旧版农活尚未完成，请等队列完成后再次开启新版助手');
   window.__farmLauncher?.remove();
@@ -14,7 +14,7 @@
   function cleanup(){
     window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();window.__farmCompatibility?.remove();delete window.__farmUpdateCatalog;
   }
-  window.__farmLauncher={status:()=>({installed:true,version:'1.24.0',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
+  window.__farmLauncher={status:()=>({installed:true,version:'1.24.1',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{
 /* Pure planning over read-only snapshots. Inputs are regular direction/Space/E keys. */
 (() => {
@@ -2084,8 +2084,14 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
       state={...state,phase:'running',message:action.message,target:action.target||'',enemies:frame.enemies.length,entering:frame.enemies.filter(e=>e.state==='enter').length,hiddenEnemies:frame.enemies.filter(e=>e.phased||e.state==='appear').length,attackable:frame.enemies.filter(e=>e.hittable&&e.state!=='enter').length,projectiles:frame.projectiles.length,recognized:true,frameMs:Math.round(performance.now()-started),casts:state.casts+result.casts,dodges:state.dodges+result.dodges,travelDodges:state.travelDodges+(result.travelDodges??(action.intent==='travel'?result.dodges:0)),intent:action.intent,riskLevel:action.riskLevel,killsPerMinute:seconds>=15?Math.round(kills*60/seconds):null,hits:s.run?.hits??0,threats:action.threats||0,hp:h.hp,wave:s.wave};
     }catch(error){set('enabled',false);state={...state,phase:'error',message:error.message}}
   }
+  // Match the game's exported stats.sig.keys without writing its telemetry.
+  function keyCount(){
+    const scene=(window.__farmGame||window.temp1)?.scene?.scenes?.find(s=>s.sys?.settings?.key==='battle');
+    const downs=scene?.run?.sig?.kd;
+    return scene?.mode!=='lobby'&&Array.isArray(downs)?downs.length:null;
+  }
   const timer=setInterval(observe,60);
-  window.__farmCombat={set,fail:message=>{set('enabled',false);state={...state,phase:'error',message}},status:()=>({...options,...state,inputTransport:window.__farmBattleInput?.status?.().transport,goldGoal:window.__farmCombatGoal?.status?.(),manualPaused:Date.now()<manualUntil||manualKeys.size>0||manualPointer,choices:window.__farmCombatPerks?.status?.().choices??state.choices,perkMessage:window.__farmCombatPerks?.status?.().message,selecting:options.enabled&&window.__farmCombatPerks?.status?.().waiting}),remove:()=>{
+  window.__farmCombat={set,fail:message=>{set('enabled',false);state={...state,phase:'error',message}},status:()=>({...options,...state,keyCount:keyCount(),inputTransport:window.__farmBattleInput?.status?.().transport,goldGoal:window.__farmCombatGoal?.status?.(),manualPaused:Date.now()<manualUntil||manualKeys.size>0||manualPointer,choices:window.__farmCombatPerks?.status?.().choices??state.choices,perkMessage:window.__farmCombatPerks?.status?.().message,selecting:options.enabled&&window.__farmCombatPerks?.status?.().waiting}),remove:()=>{
     set('enabled',false);clearInterval(timer);mortarTracks.clear();window.__farmCombatPerks?.remove();
     window.removeEventListener('keydown',manual,true);window.removeEventListener('keyup',manual,true);window.removeEventListener('pointerdown',manual,true);window.removeEventListener('pointerup',manual,true);window.removeEventListener('pointercancel',manual,true);window.removeEventListener('blur',blur);window.removeEventListener('pagehide',hide);document.removeEventListener('visibilitychange',visibility);
     window.__farmBattleInput?.remove();delete window.__farmCombat;
@@ -2182,7 +2188,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     if(!ui.dirty&&document.activeElement!==ui.input)ui.input.value=target===null?'':String(target);
     ui.input.placeholder=target===null?'读取额度中…':'';
     ui.progress.textContent=message;
-    ui.source.textContent=manualTarget===null?'默认：今日战斗上限 − 本局开始前今日累计；开局后固定本局目标。':'手动目标；点击“恢复默认”重新按今日剩余额度计算。';
+    ui.source.textContent=manualTarget===null?'默认：今日剩余战斗额度':'已设置手动目标';
   }
   function mount(parent){
     const box=document.createElement('section'),label=document.createElement('label'),input=document.createElement('input'),actions=document.createElement('div'),apply=document.createElement('button'),reset=document.createElement('button'),progress=document.createElement('p'),source=document.createElement('p');
@@ -2321,13 +2327,12 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
   window.__farmAutoFarm?.mount(panel);
   const info=document.createElement('form');info.onsubmit=e=>e.preventDefault();
   window.__farmCombatGoal?.mount(info);
-  const note=document.createElement('div');note.style.cssText='font-size:10px;color:#bdd1c2;line-height:1.6';info.append(note);panel.append(info);
+  panel.append(info);
   const detail=document.createElement('div');detail.style.cssText='font-size:10px;color:#bdd1c2;overflow-wrap:anywhere';
   const footer=document.createElement('div');footer.textContent='Esc 停止自动操作';panel.append(detail,footer);document.body.append(panel);
   function render(){
     const s=window.__farmCombat?.status?.();
     for(const {key,button}of rows){const on=!!s?.[key];button.textContent=on?'开启':'关闭';button.style.background=on?'#badcc3':'#263c30';button.style.color=on?'#193222':'#c4d5c9';button.setAttribute('aria-pressed',String(on));button.disabled=!s}
-    note.textContent='浏览器键盘自动输入，战斗时保留顶部调试提示。生存优先：危险先撤离，小史莱姆优先走位；安全赶路闪避。波末随机安全区域等待，升级等待 1.1～3.5 秒。手动开局，Esc 停止。';
     detail.textContent=(s?.selecting?s.perkMessage:s?.message||'等待扩展连接')+' · 目标 '+(s?.enemies??0)+' · 弹道 '+(s?.projectiles??0)+' · 风暴 '+(s?.casts??0)+' 次 · 闪避 '+(s?.dodges??0)+' 次 · 升级 '+(s?.choices??0)+' 次';
   }
   const timer=setInterval(render,250);render();
@@ -2369,6 +2374,7 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 #farm-compact-controls summary{font-size:11px;color:#abc2af;cursor:pointer}
 #farm-compact-controls .fh-empty{font-size:11px;color:#abc2af;padding:4px 0 10px}
 #farm-compact-controls .fh-battle-controls[hidden]+.fh-stats{display:none}
+#farm-compact-controls .fh-key-count{font-size:11px;color:#bdd1c2;margin:4px 0;font-variant-numeric:tabular-nums}
 #farm-compact-controls .fh-stats>div{border:0!important;padding:5px 0 0!important;margin:0!important;font-size:10px!important;color:#abc2af!important}
 #farm-compact-controls .fh-task-state{border-top:1px solid #42604b;padding-top:8px;margin:12px 0 0;font-size:10px;color:#c7d9c9;overflow-wrap:anywhere}
 #farm-compact-controls .fh-execution{margin-top:16px;padding:12px;background:#0d1b14;border:1px solid #304738;border-radius:7px;box-sizing:border-box}
@@ -2432,7 +2438,9 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     const tab=make('button',name),page=make('div');tab.type='button';tab.className='fh-tab';tab.id='farm-helper-tab-'+id;tab.setAttribute('role','tab');page.id='farm-helper-'+id+'-page';page.setAttribute('role','tabpanel');page.setAttribute('aria-labelledby',tab.id);tab.setAttribute('aria-controls',page.id);pages[id]=page;buttons[id]=tab;tabs.append(tab);
   }
   const empty=make('div','状态读取模式需要通过扩展启动。');empty.className='fh-empty';
-  const battle=make('div');battle.className='fh-battle-controls';const waveNote=make('p','保留正常受伤与死亡；状态不可用时暂停输入。页面可见时失焦继续；页面隐藏或游戏暂停时停止输入；Esc 关闭自动战斗；结算确认后无操作5秒回村庄。');waveNote.className='fh-note';battle.append(...rows,waveNote,goal);pages.battle.append(empty,battle);
+  const battle=make('div');battle.className='fh-battle-controls';
+  const keyReadout=make('div');keyReadout.className='fh-key-count';
+  battle.append(...rows,keyReadout,goal);pages.battle.append(empty,battle);
   if(detail){const stats=make('details');stats.className='fh-stats';stats.append(make('summary','战斗状态'),detail);pages.battle.append(stats)}
   if(farm)pages.field.append(farm);
   const automation=window.__farmAutomation;
@@ -2494,8 +2502,9 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
     const ready=!!window.__farmCombat;empty.hidden=ready;battle.hidden=!ready;
     let view=automation?.execution?.()||{status:'idle',title:'等待助手加载',reason:'',items:[],next:'',rows:[]};
     const visual=window.__farmCombat?.status?.();
+    keyReadout.textContent='按键 keys · '+(visual?.keyCount??'—')+' 次';
     if(onBattlePage&&(visual?.enabled||visual?.selecting||(tab==='battle'&&(visual?.phase==='error'||visual?.goldGoal?.triggered)))){
-      view={status:visual.selecting?'waiting':visual.phase==='error'?'error':visual.phase==='running'?'running':'waiting',title:'战斗 · 生存优先',reason:visual.selecting?visual.perkMessage:visual.message||'等待状态',items:['怪物 '+(visual.enemies||0)+'（入场 '+(visual.entering||0)+' · 隐身 '+(visual.hiddenEnemies||0)+'） · 弹道 '+(visual.projectiles||0),'风暴 '+(visual.casts||0)+' 次 · 闪避 '+(visual.dodges||0)+' 次 · 已选升级 '+(visual.choices||0)+' 次'],next:visual.selecting?'升级随机等待 1.1～3.5 秒，按原优先级选择':'正常受伤；请保持游戏页面可见，Esc 停止',rows:[{label:'状态',text:visual.recognized?'玩家状态正常 · 控制耗时 '+(visual.frameMs||0)+'ms':'等待有效状态'},{label:'策略',text:visual.riskLevel==='survive'?'优先生存':'等待判断'},{label:'效率',text:(visual.killsPerMinute==null?'统计中':visual.killsPerMinute+' 击杀/分')+' · 受击 '+(visual.hits||0)+' 次'},{label:'移动',text:'赶路闪避 '+(visual.travelDodges||0)+' 次 · 脱困 '+(visual.unsticks||0)+' 次'}]};
+      view={status:visual.selecting?'waiting':visual.phase==='error'?'error':visual.phase==='running'?'running':'waiting',title:'战斗 · 生存优先',reason:visual.selecting?visual.perkMessage:visual.message||'等待状态',items:['怪物 '+(visual.enemies||0)+'（入场 '+(visual.entering||0)+' · 隐身 '+(visual.hiddenEnemies||0)+'） · 弹道 '+(visual.projectiles||0),'风暴 '+(visual.casts||0)+' 次 · 闪避 '+(visual.dodges||0)+' 次 · 已选升级 '+(visual.choices||0)+' 次'],next:'',rows:[{label:'状态',text:visual.recognized?'玩家状态正常 · 控制耗时 '+(visual.frameMs||0)+'ms':'等待有效状态'},{label:'策略',text:visual.riskLevel==='survive'?'优先生存':'等待判断'},{label:'效率',text:(visual.killsPerMinute==null?'统计中':visual.killsPerMinute+' 击杀/分')+' · 受击 '+(visual.hits||0)+' 次'},{label:'移动',text:'赶路闪避 '+(visual.travelDodges||0)+' 次 · 脱困 '+(visual.unsticks||0)+' 次'}]};
     }
     if(onBattlePage&&visual?.goldGoal){const g=visual.goldGoal;view.rows.push({label:'本局金币',text:g.earned+' / '+(g.target??'读取中')});if(g.triggered){view.status='idle';view.title='战斗目标已达成';view.reason=g.message;view.next='已停止自动战斗，不会自动再次开局'}}
     const returning=window.__farmCombatReturn?.status?.();
@@ -2530,5 +2539,5 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 1.24.0 已开启；请查看面板中的游戏代码检查状态';
+  return '助手 1.24.1 已开启；请查看面板中的游戏代码检查状态';
 })();
