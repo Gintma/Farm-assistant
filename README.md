@@ -1,5 +1,7 @@
 # Farm Assistant
 
+**简体中文** | [English](README.en.md)
+
 面向 Farming Season 的浏览器自动化研究项目，包含农务规划、页面操作、战斗输入与结算数据观察。当前版本：**1.25.2**。
 
 > **仅供学习、研究与交流。** 本项目为个人研究项目，与 Farming Season 官方无隶属关系。如涉及侵权，或对游戏、玩家及其他相关方造成损害或不当影响，请通过 [GitHub Issues](https://github.com/Gintma/Farm-assistant/issues) 联系维护者；核实后将配合修改、下架或删除相关内容。
@@ -89,7 +91,7 @@ python3 -m unittest discover -s tests -v
 
 缺少 Node.js 时，相关回归检查会跳过。构建会更新 `extension/launcher.js`、扩展版本，并在本地生成 `dist/` 产物；不要直接编辑生成的启动文件。
 
-发布功能更新时，同步构建脚本、README 与安装说明中的版本号，提交源码、测试及对应的扩展构建结果。不要提交账号快照、网络记录、钱包或登录资料、原游戏资源、研究抓取或浏览器配置。更多要求见 [AGENTS.md](AGENTS.md)。
+发布功能更新时，同步构建脚本、中英文 README 与安装说明中的版本号，提交源码、测试及对应的扩展构建结果。不要提交账号快照、网络记录、钱包或登录资料、原游戏资源、研究抓取或浏览器配置。更多要求见 [AGENTS.md](AGENTS.md)。
 
 ## 反馈与联系
 
