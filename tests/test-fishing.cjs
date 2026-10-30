@@ -3,6 +3,9 @@ const {boot}=require('./test-farm-automation.cjs');
 const ctx={window:{}};vm.runInNewContext(fs.readFileSync('src/farm-rules.js','utf8'),ctx);const R=ctx.window.__farmRules;
 const make=()=>({owner:'a',access:{open:true},now:Date.parse('2026-10-24T00:00:00Z'),price:{pay:.001,charge:.001,mult:1},farm:{owner:'a',level:5,tz:480,tokens:10000,today:{day:'2026-10-24',harvestEarned:0},fields:[],animals:[],structures:[{id:'p',kind:'pond'}],fishing:{rod:true,day:'2026-10-24',bait:0,bought:0,casts:0,total:80,caught:80}}});
 let d=make(),p=R.fishingPlan(d);assert.equal(p.jobs[0].count,20);assert.equal(p.jobs[0].unit,47);assert.equal(p.jobs[0].cost,940);assert.equal(p.jobs[0].energy,0);
+// A cheaper token quote must not reopen today's server-recorded harvest allowance.
+{const locked=make();locked.price.pay=.0005;locked.farm.today.capRate=1000;locked.farm.today.harvestEarned=18660;
+ assert.equal(R.quote(locked).remaining,0);assert.equal(R.fishingPlan(locked).jobs.length,0,'locked cap blocks bait purchases and new casts after price changes')}
 d.farm.fishing.bought=3;assert.equal(R.fishingPlan(d).jobs[0].count,17);
 d.farm.fishing.bought=20;d.farm.fishing.bait=20;p=R.fishingPlan(d);assert.equal(p.jobs[0].kind,'fish-run');assert.equal(p.jobs[0].action,'pond-fish');assert.equal(p.jobs[0].arg,'p');assert.equal(p.jobs[0].count,1,'never submit another unchecked multi-cast batch');
 d.farm.fishing.casts=13;d.farm.fishing.bait=100;assert.equal(R.fishingPlan(d).jobs[0].count,1);

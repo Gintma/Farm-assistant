@@ -9,7 +9,7 @@ const make=mult=>({owner:'fixture',access:{open:true},now:Date.parse('2026-10-27
 for(const mult of [1,.5,.137,.05,.001,2,'0.25']){
  const d=make(mult),rate=Math.min(1,Math.max(.05,Number(mult))),pay=v=>Math.round(v/.00037*rate),q=R.quote(d),m=E.model(d);
  assert.equal(q.rewardMult,rate);assert(q.rewardMultKnown);
- assert.equal(q.base,pay(18.66)*1.2);assert.equal(q.cap,pay(18.66)*1.2*1.25+123);
+ assert.equal(q.base,pay(18.66)*1.2);assert.equal(q.cap,Math.round(18.66*1.2*1.25*(pay(1e6)/1e6))+123);
  assert.equal(m.battle.cap,pay(14.67));assert.equal(m.orders.cap,Math.floor(pay(18.66*.25)));
  assert.equal(m.village.hourly,pay(6.67)*1.2/24);assert(Math.abs(m.village.stored-(77+pay(6.67)*1.2/24))<1e-8);
  assert.equal(m.carry,456);assert.equal(m.carryCap,pay(18.66)*1.2*7);assert.equal(m.harvest.earned,1000);assert.equal(m.battle.earned,500);assert.equal(d.farm.tokens,123456,'do not discount existing balance');
@@ -33,6 +33,16 @@ for(const level of [1,2,3,4,5,6,7])for(const nft of [undefined,{on:false,lockDay
 }
 let d=make(.5),q=R.quote(d);d.farm.today.harvestEarned=q.cap+100;assert.equal(R.quote(d).remaining,0,'past earnings above a newly reduced cap are retained');assert.equal(R.quote(d).carry,456);
 d=make(.5);const low=E.model(d).harvest.cap;d.price.mult=1;assert(E.model(d).harvest.cap>low,'each new snapshot updates estimates');
+// The game now uses the lower daily cap rate, rounded only after bank/NFT bonuses.
+d=make(.137);d.farm.today.capRate=200;const snapshot=JSON.stringify(d),locked=R.quote(d);
+assert.equal(locked.capRate,200);assert.equal(locked.cap,Math.round(18.66*1.2*1.25*200)+123);assert.equal(E.model(d).harvest.cap,locked.cap);
+assert.equal(JSON.stringify(d),snapshot,'reading quota does not change the game snapshot');
+d.price.mult=1;d.price.pay=.0001;assert.equal(R.quote(d).cap,locked.cap,'higher payout/conversion cannot raise the recorded daily cap');
+d.price.mult=.05;d.price.pay=.001;assert.equal(R.quote(d).capRate,50);assert.equal(R.quote(d).cap,Math.round(18.66*1.2*1.25*50)+123,'lower current conversion still lowers the cap');
+d=make(.5);d.farm.today.capRate=100;d.farm.today.harvestEarned=R.quote(d).cap;assert.equal(R.quote(d).remaining,0);assert.equal(E.model(d).harvest.left,0);d.farm.fields=[{id:'blank',crop:null}];d.farm.harvestCarry=R.quote(d).base*7;
+assert.notEqual(R.chooseCrop(d,{crop:'turnip',smart:false,feedDays:1},{}).crop,'turnip','reached locked quota does not plant another cash crop');
+d=make(.5);d.farm.today.capRate=100;d.farm.nft=undefined;delete d.farm.bank;assert.equal(R.quote(d).cap,Math.round(18.66*100)+123,'same cap rule works without NFT or bank bonuses');
+for(const stored of [undefined,null,0,-1,'invalid']){d=make(.5);d.farm.today.capRate=stored;assert.equal(R.quote(d).capRate,Math.round(1e6/.00037*.5)/1e6,'missing/uninitialized rate follows current conversion')}
 for(const mult of [0,-1,null,'invalid',Infinity,NaN])assert.throws(()=>R.quote(make(mult)),/发放比例/);
 d=make(undefined);q=R.quote(d);assert.equal(q.rewardMult,1);assert.equal(q.rewardMultKnown,false,'missing multiplier is identified as estimated');
 (async()=>{
@@ -40,5 +50,5 @@ d=make(undefined);q=R.quote(d);assert.equal(q.rewardMult,1);assert.equal(q.rewar
   const b=await boot();b.d.price.mult=mult;b.d.farm.today.energy=0;b.api.set('feed',true);b.api.set('energy',true);b.api.configure('energyBudget',500);
   await b.step(3);assert.equal(b.clicks.includes('energy:10'),expected,'energy purchase must use scaled incremental rewards and known ratio: '+mult);b.api.remove();
  }
- console.log('PASS: payout rates/clamps/rounding, NFT/bank composition, raw spending, unchanged balances, dynamic caps, actual board rewards and conservative energy purchases');
+ console.log('PASS: payout rates/clamps/rounding, NFT/bank composition, raw spending, unchanged balances, daily cap-rate locks, actual board rewards and conservative energy purchases');
 })().catch(e=>{console.error(e);process.exitCode=1});

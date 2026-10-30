@@ -38,11 +38,16 @@
     if(rewardMultKnown&&(!Number.isFinite(reportedMult)||reportedMult<=0))throw Error('奖励发放比例无效，等待服务器更新');
     const rewardMult=rewardMultKnown?Math.min(1,Math.max(.05,reportedMult)):1;
     const pay=v=>Math.round(v/d.price.pay*rewardMult),charge=v=>Math.round(v/d.price.charge);
-    const base=pay(l.harvest)*bonus,cap=base*nftCapBonus+(f.today.feedSpent||0);
+    const base=pay(l.harvest)*bonus;
+    // Daily cap conversion can only fall during the farm day. Read the server's
+    // recorded rate; never write capRate into the authenticated snapshot.
+    const currentCapRate=pay(1e6)/1e6,storedCapRate=Number(f.today.capRate);
+    const capRate=Number.isFinite(storedCapRate)&&storedCapRate>0?(currentCapRate>0?Math.min(storedCapRate,currentCapRate):storedCapRate):currentCapRate;
+    const cap=Math.round(l.harvest*bonus*nftCapBonus*capRate)+(f.today.feedSpent||0);
     const carry=Math.max(0,f.harvestCarry||0),remaining=Math.max(0,cap-f.today.harvestEarned);
     const value=v=>Math.floor(pay(v)*l.mult*harvestBonus);
     const animalValue=v=>Math.floor(Math.round(pay(v)*l.mult)*harvestBonus);
-    return {cal,l,bonus,nftCapBonus,nftYieldBonus,harvestBonus,rewardMult,rewardMultKnown,pay,charge,animalValue,base,cap,carry,remaining,room:remaining+Math.max(0,base*7-carry),value,energy10:charge(.0045*l.mult*10)};
+    return {cal,l,bonus,nftCapBonus,nftYieldBonus,harvestBonus,rewardMult,rewardMultKnown,pay,charge,animalValue,base,capRate,cap,carry,remaining,room:remaining+Math.max(0,base*7-carry),value,energy10:charge(.0045*l.mult*10)};
   }
   function building(f,a){
     const rule=animals[a.kind];if(!rule)return null;

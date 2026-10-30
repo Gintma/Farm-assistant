@@ -1,9 +1,9 @@
-/* Farming Season helper 1.25.1: original combat mechanics and unified controls. */
+/* Farming Season helper 1.25.2: original combat mechanics and unified controls. */
 (() => {
   if(location.hostname!=='farmingseason.io')throw Error('请只在 Farming Season 游戏页启动');
   const temp1=window.__farmGame||window.temp1;
   if(!temp1?.scene?.scenes)throw Error('未找到游戏实例，请使用扩展启动');
-  if(window.__farmLauncher?.status?.().version==='1.25.1')return '助手已开启，保留当前所有开关';
+  if(window.__farmLauncher?.status?.().version==='1.25.2')return '助手已开启，保留当前所有开关';
   const handoff={farm:window.__farmAutoFarm?.status?.(),automation:window.__farmAutomation?.status?.(),layout:window.__farmLayout?.status?.()};
   if(handoff.farm?.pending)throw Error('旧版农活尚未完成，请等队列完成后再次开启新版助手');
   window.__farmLauncher?.remove();
@@ -14,7 +14,7 @@
   function cleanup(){
     window.__farmBattleReport?.remove();window.__farmCombatReturn?.remove();window.__farmCombatGoal?.remove();window.__farmCombat?.remove();window.__farmEarnings?.remove();window.__farmVerification?.remove();window.__farmCompact?.remove();window.__farmActivity?.remove();window.__farmAutomation?.remove();window.__farmAutoFarm?.remove();window.__farmVersionGuard?.remove();window.__farmCompatibility?.remove();delete window.__farmUpdateCatalog;
   }
-  window.__farmLauncher={status:()=>({installed:true,version:'1.25.1',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
+  window.__farmLauncher={status:()=>({installed:true,version:'1.25.2',farmReady:!!window.__farmAutomation}),remove:()=>{cleanup();delete window.__farmLauncher}};
   try{
 /* Pure planning over read-only snapshots. Inputs are regular direction/Space/E keys. */
 (() => {
@@ -689,11 +689,16 @@ window.__farmUpdateCatalog=Object.freeze({
     if(rewardMultKnown&&(!Number.isFinite(reportedMult)||reportedMult<=0))throw Error('奖励发放比例无效，等待服务器更新');
     const rewardMult=rewardMultKnown?Math.min(1,Math.max(.05,reportedMult)):1;
     const pay=v=>Math.round(v/d.price.pay*rewardMult),charge=v=>Math.round(v/d.price.charge);
-    const base=pay(l.harvest)*bonus,cap=base*nftCapBonus+(f.today.feedSpent||0);
+    const base=pay(l.harvest)*bonus;
+    // Daily cap conversion can only fall during the farm day. Read the server's
+    // recorded rate; never write capRate into the authenticated snapshot.
+    const currentCapRate=pay(1e6)/1e6,storedCapRate=Number(f.today.capRate);
+    const capRate=Number.isFinite(storedCapRate)&&storedCapRate>0?(currentCapRate>0?Math.min(storedCapRate,currentCapRate):storedCapRate):currentCapRate;
+    const cap=Math.round(l.harvest*bonus*nftCapBonus*capRate)+(f.today.feedSpent||0);
     const carry=Math.max(0,f.harvestCarry||0),remaining=Math.max(0,cap-f.today.harvestEarned);
     const value=v=>Math.floor(pay(v)*l.mult*harvestBonus);
     const animalValue=v=>Math.floor(Math.round(pay(v)*l.mult)*harvestBonus);
-    return {cal,l,bonus,nftCapBonus,nftYieldBonus,harvestBonus,rewardMult,rewardMultKnown,pay,charge,animalValue,base,cap,carry,remaining,room:remaining+Math.max(0,base*7-carry),value,energy10:charge(.0045*l.mult*10)};
+    return {cal,l,bonus,nftCapBonus,nftYieldBonus,harvestBonus,rewardMult,rewardMultKnown,pay,charge,animalValue,base,capRate,cap,carry,remaining,room:remaining+Math.max(0,base*7-carry),value,energy10:charge(.0045*l.mult*10)};
   }
   function building(f,a){
     const rule=animals[a.kind];if(!rule)return null;
@@ -2614,5 +2619,5 @@ if(flags.workshop&&lastPlan.hint.workshop){reason=lastPlan.hint.workshop;title=/
 
   }catch(error){cleanup();delete window.__farmLauncher;delete window.__farmHandoff;throw error}
   delete window.__farmHandoff;
-  return '助手 1.25.1 已开启；请查看面板中的游戏代码检查状态';
+  return '助手 1.25.2 已开启；请查看面板中的游戏代码检查状态';
 })();
