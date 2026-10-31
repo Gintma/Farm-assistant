@@ -6,6 +6,7 @@ let d=make(),p=R.fishingPlan(d);assert.equal(p.jobs[0].count,20);assert.equal(p.
 // A cheaper token quote must not reopen today's server-recorded harvest allowance.
 {const locked=make();locked.price.pay=.0005;locked.farm.today.capRate=1000;locked.farm.today.harvestEarned=18660;
  assert.equal(R.quote(locked).remaining,0);assert.equal(R.fishingPlan(locked).jobs.length,0,'locked cap blocks bait purchases and new casts after price changes')}
+for(const mult of [.05,.238,.5,1]){const scaled=make();scaled.price.mult=mult;const unit=Math.max(1,Math.round(47*mult));assert.equal(R.fishingPlan(scaled).jobs[0].unit,unit);assert.equal(R.fishingPlan(scaled).jobs[0].cost,unit*20)}
 d.farm.fishing.bought=3;assert.equal(R.fishingPlan(d).jobs[0].count,17);
 d.farm.fishing.bought=20;d.farm.fishing.bait=20;p=R.fishingPlan(d);assert.equal(p.jobs[0].kind,'fish-run');assert.equal(p.jobs[0].action,'pond-fish');assert.equal(p.jobs[0].arg,'p');assert.equal(p.jobs[0].count,1,'never submit another unchecked multi-cast batch');
 d.farm.fishing.casts=13;d.farm.fishing.bait=100;assert.equal(R.fishingPlan(d).jobs[0].count,1);

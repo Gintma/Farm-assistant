@@ -19,7 +19,7 @@ for(const mult of [1,.5,.137,.05,.001,2,'0.25']){
  }
  assert.equal(q.energy10,Math.round(.0045*2.4*10/.00031));assert.equal(q.charge(57),Math.round(57/.00031),'costs are not discounted');
  d.farm.animals=[{id:'cow',kind:'cow',productReady:true,fedWindows:[],meals:1}];d.farm.structures=[{id:'barn',kind:'barn'}];
- assert.equal(R.collectPlan(d).value,q.animalValue(.16));assert.equal(R.feedPlan(d).coins,Math.round(.04/.00031));
+ assert.equal(R.collectPlan(d).value,q.animalValue(.16));assert.equal(R.feedPlan(d).coins,Math.max(1,Math.round(Math.round(.04/.00031)*rate)));
  const board={day:'2026-10-27',orders:[{index:0,items:{milk:1},reward:12}],owner:'fixture'};
  W.syncBoard(board,d,999999);assert.equal(board.orders[0].reward,12,'actual order-board reward must not be discounted twice');
 }

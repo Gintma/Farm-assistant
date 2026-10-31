@@ -44,7 +44,7 @@ b=fixture();b.d.owner=b.d.farm.owner=b.board.owner='test-owner';b.board.orders=e
 p=W.plan(b.d,{...b.config,workshopPrep:true},b.board);assert.equal(p.prep.error,undefined);assert.equal(p.prep.orders.length,4);assert.equal(p.prep.need.fruit,4);assert.equal(p.prep.covered,false,'today juice is reserved and not reused for tomorrow');assert(!p.jobs.some(j=>j.prep&&j.kind==='craft-order'));
 b.d.farm.structures.push({id:'reserve-orchard',kind:'orchard',slots:[]});p=W.plan(b.d,{...b.config,workshopPrep:true},b.board);assert(p.jobs.some(j=>j.kind==='craft-keep'&&j.arg==='fruit'&&j.keep),'future juice keeps fruit before the order resets');
 b.d.farm.structures=b.d.farm.structures.filter(s=>s.kind!=='press');p=W.plan(b.d,{...b.config,workshopPrep:true},b.board);assert(!p.jobs.some(j=>j.kind==='craft-keep'&&j.arg==='fruit'),'missing press does not create an impossible fruit task');
-ctx.window.__FS_CRAFT2__=['loom','press','jamKitchen'];assert.throws(()=>W.forecast('test-owner','2026-10-29'),/开放范围/);ctx.window.__FS_CRAFT2__=['loom','press'];
+ctx.window.__FS_CRAFT2__=['loom','press','unknownKitchen'];assert.throws(()=>W.forecast('test-owner','2026-10-29'),/开放范围/);ctx.window.__FS_CRAFT2__=['loom','press'];
 (async()=>{
  const orders=[{index:0,items:{egg:1},reward:100},{index:1,items:{flour:1},reward:0},{index:2,items:{bread:1},reward:0},{index:3,items:{juice:2},reward:2607}];
  let x=await workshopBoot(undefined,orders);

@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | **English**
 
-A browser automation research project for Farming Season, covering farm planning, page interactions, battle inputs, and settlement data observation. Current version: **1.25.2**.
+A browser automation research project for Farming Season, covering farm planning, page interactions, battle inputs, and settlement data observation. Current version: **1.26.0**.
 
 > **For learning, research, and discussion only.** This is an independent personal project and is not affiliated with Farming Season. If it infringes any rights or causes harm or disruption to the game, its players, or other parties, please contact the maintainer through [GitHub Issues](https://github.com/Gintma/Farm-assistant/issues). Verified concerns will be addressed by modifying, taking down, or removing the affected content as appropriate.
 
@@ -12,7 +12,7 @@ A browser automation research project for Farming Season, covering farm planning
 | --- | --- |
 | Fields | Harvesting and replanting, crop selection, energy reserves, and planting based on the daily allowance |
 | Animals | Feeding, collecting products, and managing feed and material reserves |
-| Workshops | Order-based production, preparation for the next day's orders, and comparisons of purchasing and processing costs |
+| Workshops | Order-based production (including jam), preparation for the next day's orders, and comparisons of purchasing and processing costs |
 | Daily tasks | Enabled tasks such as village income, mining, oil collection, and fishing |
 | Earnings | Daily progress and allowance details for harvests, battles, and workshop orders |
 | Battle | Target selection, movement, dodging, storm skills, upgrade choices, optional gold-target retreat, and latest-settlement export |

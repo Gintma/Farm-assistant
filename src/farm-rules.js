@@ -47,7 +47,7 @@
     const carry=Math.max(0,f.harvestCarry||0),remaining=Math.max(0,cap-f.today.harvestEarned);
     const value=v=>Math.floor(pay(v)*l.mult*harvestBonus);
     const animalValue=v=>Math.floor(Math.round(pay(v)*l.mult)*harvestBonus);
-    return {cal,l,bonus,nftCapBonus,nftYieldBonus,harvestBonus,rewardMult,rewardMultKnown,pay,charge,animalValue,base,capRate,cap,carry,remaining,room:remaining+Math.max(0,base*7-carry),value,energy10:charge(.0045*l.mult*10)};
+    return {cal,l,bonus,nftCapBonus,nftYieldBonus,harvestBonus,rewardMult,rewardMultKnown,pay,charge,feedCost:v=>Math.max(1,Math.round(charge(v)*rewardMult)),animalValue,base,capRate,cap,carry,remaining,room:remaining+Math.max(0,base*7-carry),value,energy10:charge(.0045*l.mult*10)};
   }
   function building(f,a){
     const rule=animals[a.kind];if(!rule)return null;
@@ -67,7 +67,7 @@
       buildings.set(b.id,b);if((a.meals??1)===0)continue;
       needed+=r.bags;
       if(bags<r.bags&&hasSilo){const n=Math.ceil((r.bags-bags)/10);if(grain>=n){grain-=n;bags+=n*10}}
-      if(bags>=r.bags)bags-=r.bags;else coins+=q.charge(r.meal);
+      if(bags>=r.bags)bags-=r.bags;else coins+=q.feedCost(r.meal);
     }
     return {hungry,coins,bags:needed,energy:[...buildings.values()].filter(b=>b.fedWindow!==q.cal.meal).length*2,meal:q.cal.meal};
   }
@@ -77,14 +77,19 @@
     for(const a of ready){const r=animals[a.kind],b=building(f,a);if(!r||!b)throw Error('未知动物或建筑');bs.set(b.id,b);const item={chicken:'egg',cow:'milk',sheep:'wool'}[a.kind];if(item&&f.keep?.[item]&&(f.pantry?.[item]||0)+(kept[item]||0)<200){kept[item]=(kept[item]||0)+1;continue}value+=q.animalValue(r.meal*4*r.days)}
     return {ready,value,energy:[...bs.values()].filter(b=>b.collectDay!==q.cal.day).length*2};
   }
-  function orchardPlan(d){const f=d.farm,q=quote(d);let stored=f.pantry?.fruit||0;return f.structures.filter(s=>s.kind==='orchard'&&built(s,d.now)).map(s=>{
-    const ready=(s.slots||[]).map((x,i)=>({...x,i})).filter(x=>trees[x.tree]&&d.now-x.lastHarvestAt>=trees[x.tree].ms);
-    const value=ready.reduce((n,x)=>{if(craftOpen('press')&&f.keep?.fruit&&isFruit(x.tree)&&stored<200){stored++;return n}return n+q.value(trees[x.tree].value)},0);return {id:s.id,ready,value};
-  }).filter(x=>x.ready.length)}
+  const orchardItem=id=>isFruit(id)?'fruit':'berries';
+  const canKeepOrchard=(f,item)=>craftOpen(item==='fruit'?'press':'jamKitchen')&&f.keep?.[item];
+  function orchardPlan(d){
+    const f=d.farm,q=quote(d),stored={fruit:f.pantry?.fruit||0,berries:f.pantry?.berries||0};
+    return f.structures.filter(s=>s.kind==='orchard'&&built(s,d.now)).map(s=>{
+      const ready=(s.slots||[]).map((x,i)=>({...x,i})).filter(x=>trees[x.tree]&&d.now-x.lastHarvestAt>=trees[x.tree].ms);
+      const value=ready.reduce((n,x)=>{const item=orchardItem(x.tree);if(canKeepOrchard(f,item)&&stored[item]<200){stored[item]++;return n}return n+q.value(trees[x.tree].value)},0);return {id:s.id,ready,value};
+    }).filter(x=>x.ready.length);
+  }
   function futureValue(d,flags){
     const f=d.farm,q=quote(d);let total=0;
     if(flags.collect)total+=collectPlan(d).value;
-    if(flags.orchard){let stored=f.pantry?.fruit||0;for(const s of f.structures.filter(s=>s.kind==='orchard'))for(const x of s.slots||[]){const t=trees[x.tree];if(t&&x.lastHarvestAt+t.ms<q.cal.nextMidnight){if(craftOpen('press')&&f.keep?.fruit&&isFruit(x.tree)&&stored<200)stored++;else total+=q.value(t.value)}}}
+    if(flags.orchard){const stored={fruit:f.pantry?.fruit||0,berries:f.pantry?.berries||0};for(const s of f.structures.filter(s=>s.kind==='orchard'))for(const x of s.slots||[]){const t=trees[x.tree];if(t&&x.lastHarvestAt+t.ms<q.cal.nextMidnight){const item=orchardItem(x.tree);if(canKeepOrchard(f,item)&&stored[item]<200)stored[item]++;else total+=q.value(t.value)}}}
     for(const x of f.fields){const c=crops[x.crop];if(c&&!['wheat','corn'].includes(x.crop)&&x.plantedAt+c.ms<q.cal.nextMidnight)total+=q.value(c.value)}
     return total;
   }
@@ -119,7 +124,7 @@
     if(!fish?.rod)return empty;
     const sameDay=fish.day===q.cal.day,bought=sameDay?fish.bought:0,casts=sameDay?fish.casts:0;
     if(![bought,casts,fish.bait,fish.total,fish.caught].every(n=>Number.isSafeInteger(n)&&n>=0)||bought>20||casts>20)throw Error('钓鱼计数无法确认，暂停钓鱼');
-    const unit=Math.max(1,q.charge(.25*levels[Math.max(3,f.level)].harvest/20*.2));
+    const unit=Math.max(1,Math.round(q.charge(.25*levels[Math.max(3,f.level)].harvest/20*.2)*q.rewardMult));
     const base={route:'rwa',id:pond.id,energy:0,value:0};
     const progress='今日已购 '+bought+'/20 · 已抛竿 '+casts+'/20 · 鱼饵 '+fish.bait;
     if(fish.line){
